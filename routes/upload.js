@@ -127,9 +127,18 @@ const safeParseJSON = (value, defaultValue = null) => {
 };
 
 // Configure multer for file uploads - save original files with prefix
+// Use /tmp for serverless environments (Netlify), otherwise use uploads directory
+const getUploadDir = () => {
+  // Check if running on Netlify (serverless environment)
+  if (process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL) {
+    return '/tmp';
+  }
+  return path.join(__dirname, '../uploads/resumes');
+};
+
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../uploads/resumes');
+    const uploadDir = getUploadDir();
     try {
       await fsPromises.mkdir(uploadDir, { recursive: true });
       cb(null, uploadDir);

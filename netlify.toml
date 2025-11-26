@@ -1,0 +1,32 @@
+[build]
+  # No build command needed for API-only deployment
+  command = ""
+  # Functions directory
+  functions = "netlify/functions"
+  # Publish directory (empty for API-only)
+  publish = "."
+
+[functions]
+  # Node.js runtime version
+  node_bundler = "esbuild"
+  # Increase timeout for long-running operations (max 26 seconds for free tier, 10 seconds for pro)
+  included_files = ["routes/**", "config/**", "middleware/**", "utils/**", "package.json"]
+
+[[redirects]]
+  # Redirect all API routes to the serverless function
+  from = "/api/*"
+  to = "/.netlify/functions/server"
+  status = 200
+  force = true
+
+# Environment variables should be set in Netlify dashboard
+# Required variables:
+# - DB_HOST
+# - DB_USER
+# - DB_PASSWORD
+# - DB_NAME
+# - JWT_SECRET
+# - GEMINI_API_KEY
+# - TALYGEN_API_TOKEN (optional)
+# - TALYGEN_API_URL (optional)
+
