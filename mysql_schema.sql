@@ -88,3 +88,24 @@ CREATE TABLE IF NOT EXISTS candidate_evaluations (
   FOREIGN KEY (job_description_id) REFERENCES job_descriptions(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Create file_uploads table for storing Talygen API upload responses
+CREATE TABLE IF NOT EXISTS file_uploads (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  original_file_name VARCHAR(255) NOT NULL,
+  file_name VARCHAR(255),
+  file_path TEXT,
+  file_thumb_path TEXT,
+  folder_id VARCHAR(255),
+  file_type VARCHAR(100),
+  file_size DECIMAL(15,2),
+  file_id TEXT,
+  upload_status INT,
+  error_msg TEXT,
+  api_response JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_original_file_name (original_file_name),
+  INDEX idx_created_at (created_at DESC),
+  INDEX idx_upload_status (upload_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

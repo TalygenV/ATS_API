@@ -1,4 +1,5 @@
 const express = require('express');
+const axios = require('axios');
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
 
@@ -137,7 +138,53 @@ router.get('/:id/download', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Resume not found' });
     }
 
-    // Check if file path exists
+    // First, try to find the file in file_uploads table (Talygen storage)
+    const fileUpload = await queryOne(
+      'SELECT * FROM file_uploads WHERE original_file_name = ? ORDER BY created_at DESC LIMIT 1',
+      [resume.file_name]
+    );
+
+    if (fileUpload && fileUpload.file_path) {
+      // File is stored in Talygen, download from there
+      console.log(`📥 Downloading resume from Talygen: ${fileUpload.file_path}`);
+      
+      try {
+        const response = await axios.get(fileUpload.file_path, {
+          responseType: 'stream'
+        });
+
+        // Determine content type from file extension or response headers
+        const fileExt = path.extname(fileUpload.file_name || fileUpload.original_file_name || '').toLowerCase();
+        const mimeTypes = {
+          '.pdf': 'application/pdf',
+          '.doc': 'application/msword',
+          '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          '.txt': 'text/plain',
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg'
+        };
+        const contentType = response.headers['content-type'] || mimeTypes[fileExt] || 'application/octet-stream';
+
+        // Get filename for download
+        const downloadFileName = fileUpload.file_name || fileUpload.original_file_name || `resume-${id}${fileExt}`;
+
+        // Set headers for file download
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${downloadFileName}"; filename*=UTF-8''${encodeURIComponent(downloadFileName)}`);
+
+        // Pipe the response stream to the client
+        response.data.pipe(res);
+
+        console.log(`✅ File download initiated from Talygen: ${downloadFileName}`);
+        return;
+      } catch (talygenError) {
+        console.error('⚠️  Error downloading from Talygen, falling back to local file:', talygenError.message);
+        // Fall through to local file download
+      }
+    }
+
+    // Fallback: Try to download from local file system
     if (!resume.file_path) {
       return res.status(404).json({ error: 'Original file not found. File may have been deleted.' });
     }
@@ -146,7 +193,7 @@ router.get('/:id/download', authenticate, async (req, res) => {
     try {
       await fs.access(resume.file_path);
     } catch (accessError) {
-      return res.status(404).json({ error: 'Original file not found on server.' });
+      return res.status(404).json({ error: 'Original file not found on server. The file may have been moved or deleted.' });
     }
 
     // Get file extension from the actual file path
@@ -181,6 +228,7 @@ router.get('/:id/download', authenticate, async (req, res) => {
     // Read and send the file
     const fileBuffer = await fs.readFile(resume.file_path);
     res.send(fileBuffer);
+    console.log(`✅ File downloaded from local storage: ${finalFileName}`);
   } catch (error) {
     console.error('Error downloading resume:', error);
     res.status(500).json({

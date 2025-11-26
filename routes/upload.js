@@ -1,7 +1,10 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs').promises;
+const fs = require('fs');
+const fsPromises = require('fs').promises;
+const FormData = require('form-data');
+const axios = require('axios');
 const { extractTextFromFile, parseResumeWithGemini } = require('../utils/resumeParser');
 const { findDuplicateResume } = require('../utils/duplicateChecker');
 const { matchResumeWithJobDescription } = require('../utils/resumeMatcher');
@@ -9,6 +12,102 @@ const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Helper function to upload file to Talygen API and store response
+const uploadToTalygen = async (filePath, fileName, mimetype) => {
+  try {
+    let apiToken = process.env.TALYGEN_API_TOKEN;
+    const apiUrl = process.env.TALYGEN_API_URL || 'https://stagefilemedia.talygen.com/api/UploadStreamNew';
+
+    if (!apiToken) {
+      console.warn('⚠️  Talygen API token not configured, skipping Talygen upload');
+      return null;
+    }
+
+    // Trim token in case there are extra spaces
+    apiToken = apiToken.trim();
+
+    // Log token status (first 4 chars only for debugging)
+    const tokenPreview = apiToken.length > 4 ? apiToken.substring(0, 4) + '...' : '***';
+    console.log(`📤 Uploading file to Talygen API: ${fileName} (Token: ${tokenPreview}, Length: ${apiToken.length})`);
+
+    // Create form data
+    const formData = new FormData();
+    formData.append('folderId', '0');
+    formData.append('moduleName', 'DocStorage');
+    formData.append('subModuleName', '');
+    formData.append('additionalStorage', '');
+    formData.append('additionalStorageFolderId', '');
+    formData.append('fileDetails', '');
+    formData.append('file', fs.createReadStream(filePath), fileName);
+
+    // Make request to Talygen API
+    // Note: Authorization header must include "Bearer " prefix
+    const authHeader = apiToken.startsWith('Bearer ') ? apiToken : `Bearer ${apiToken}`;
+    const response = await axios.post(apiUrl, formData, {
+      headers: {
+        'Authorization': authHeader,
+        ...formData.getHeaders()
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity
+    });
+
+    console.log(`✅ File uploaded successfully to Talygen API`);
+
+    const apiResponse = response.data;
+
+    // Store response in database
+    const result = await query(
+      `INSERT INTO file_uploads (
+        original_file_name, file_name, file_path, file_thumb_path, folder_id,
+        file_type, file_size, file_id, upload_status, error_msg, api_response
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        fileName,
+        apiResponse.FileName || null,
+        apiResponse.FilePath || null,
+        apiResponse.FileThumbPath || null,
+        apiResponse.FolderId || null,
+        apiResponse.FileType || null,
+        apiResponse.FileSize || null,
+        JSON.stringify(apiResponse.FileId || apiResponse.FileID || null),
+        apiResponse.UploadStatus || null,
+        apiResponse.ErrorMsg || null,
+        JSON.stringify(apiResponse)
+      ]
+    );
+
+    console.log(`✅ Talygen upload response saved to database (ID: ${result.insertId})`);
+
+    return {
+      fileUploadId: result.insertId,
+      filePath: apiResponse.FilePath,
+      apiResponse: apiResponse
+    };
+  } catch (error) {
+    console.error(`⚠️  Error uploading to Talygen API:`, error.message);
+    if (error.response) {
+      console.error('API Response Status:', error.response.status);
+      console.error('API Response Data:', error.response.data);
+      console.error('API Response Headers:', error.response.headers);
+      
+      // If 401, provide helpful message
+      if (error.response.status === 401) {
+        console.error('❌ Authentication failed. Please check:');
+        console.error('   1. TALYGEN_API_TOKEN is set in your .env file');
+        console.error('   2. The token is correct and not expired');
+        console.error('   3. The token format matches what the API expects');
+      }
+    } else if (error.request) {
+      console.error('Request was made but no response received:', error.request);
+    } else {
+      console.error('Error setting up request:', error.message);
+    }
+    // Don't throw error - allow resume processing to continue even if Talygen upload fails
+    return null;
+  }
+};
 
 // Helper function to safely parse JSON fields (handles both strings and already-parsed objects)
 const safeParseJSON = (value, defaultValue = null) => {
@@ -32,7 +131,7 @@ const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     const uploadDir = path.join(__dirname, '../uploads/resumes');
     try {
-      await fs.mkdir(uploadDir, { recursive: true });
+      await fsPromises.mkdir(uploadDir, { recursive: true });
       cb(null, uploadDir);
     } catch (error) {
       cb(error, null);
@@ -48,6 +147,25 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, and TXT files are allowed.'));
+    }
+  }
+});
+
+// Multer with memory storage for Talygen uploads (no disk storage)
+const uploadMemory = multer({
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
@@ -123,6 +241,14 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
     const filePath = req.file.path;
     const fileName = req.file.originalname; // Original filename with extension
     const mimetype = req.file.mimetype;
+
+    // Upload to Talygen API and store response
+    let talygenUpload = null;
+    try {
+      talygenUpload = await uploadToTalygen(filePath, fileName, mimetype);
+    } catch (talygenError) {
+      console.error(`⚠️  Talygen upload failed, continuing with resume processing:`, talygenError.message);
+    }
 
     // Extract text from file
     const resumeText = await extractTextFromFile(filePath, mimetype);
@@ -249,13 +375,17 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
         experience_match: matchResults.experience_match,
         education_match: matchResults.education_match,
         status: matchResults.status
-      }
+      },
+      talygenUpload: talygenUpload ? {
+        fileUploadId: talygenUpload.fileUploadId,
+        filePath: talygenUpload.filePath
+      } : null
     });
   } catch (error) {
     // Clean up file on error
     if (req.file) {
       try {
-        await fs.unlink(req.file.path);
+        await fsPromises.unlink(req.file.path);
         console.log(`🗑️  Cleaned up file: ${req.file.path}`);
       } catch (e) {
         // Ignore cleanup errors
@@ -328,6 +458,14 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
         const filePath = file.path;
         const fileName = file.originalname;
         const mimetype = file.mimetype;
+
+        // Upload to Talygen API and store response
+        let talygenUpload = null;
+        try {
+          talygenUpload = await uploadToTalygen(filePath, fileName, mimetype);
+        } catch (talygenError) {
+          console.error(`   ⚠️  Talygen upload failed, continuing with resume processing:`, talygenError.message);
+        }
 
         console.log(`   📄 Extracting text from file...`);
         // Extract text from file
@@ -460,7 +598,11 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
             experience_match: matchResults.experience_match,
             education_match: matchResults.education_match,
             status: matchResults.status
-          }
+          },
+          talygenUpload: talygenUpload ? {
+            fileUploadId: talygenUpload.fileUploadId,
+            filePath: talygenUpload.filePath
+          } : null
         });
         console.log(`   ✅ SUCCESS - Completed in ${fileProcessingTime}s\n`);
       } catch (error) {
@@ -476,7 +618,7 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
 
         // Clean up file on error
         try {
-          await fs.unlink(file.path);
+          await fsPromises.unlink(file.path);
         } catch (e) {
           // Ignore cleanup errors
         }
@@ -506,6 +648,235 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
     console.log(`==========================================\n`);
     res.status(500).json({
       error: 'Failed to process resumes',
+      message: error.message
+    });
+  }
+});
+
+// Upload file to Talygen API and store response
+router.post('/talygen', authenticate, requireWriteAccess, uploadMemory.single('file'), handleMulterError, async (req, res) => {
+  const startTime = Date.now();
+  console.log('\n========== TALYGEN UPLOAD STARTED ==========');
+  console.log(`Timestamp: ${new Date().toISOString()}`);
+  console.log(`User: ${req.user.email} (${req.user.role})`);
+  
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const apiToken = process.env.TALYGEN_API_TOKEN;
+    const apiUrl = process.env.TALYGEN_API_URL || 'https://stagefilemedia.talygen.com/api/UploadStreamNew';
+
+    if (!apiToken) {
+      return res.status(500).json({ error: 'Talygen API token not configured' });
+    }
+
+    const fileBuffer = req.file.buffer; // File is in memory as buffer
+    const fileName = req.file.originalname;
+    const fileMimetype = req.file.mimetype;
+
+    console.log(`📤 Uploading file to Talygen API: ${fileName} (${(fileBuffer.length / 1024).toFixed(2)} KB)`);
+
+    // Create form data
+    const formData = new FormData();
+    formData.append('folderId', '0');
+    formData.append('moduleName', 'DocStorage');
+    formData.append('subModuleName', '');
+    formData.append('additionalStorage', '');
+    formData.append('additionalStorageFolderId', '');
+    formData.append('fileDetails', '');
+    // Append file buffer directly (no disk file)
+    formData.append('file', fileBuffer, {
+      filename: fileName,
+      contentType: fileMimetype
+    });
+
+    // Make request to Talygen API
+    // Note: Authorization header must include "Bearer " prefix
+    let apiTokenTrimmed = apiToken.trim();
+    const authHeader = apiTokenTrimmed.startsWith('Bearer ') ? apiTokenTrimmed : `Bearer ${apiTokenTrimmed}`;
+    const response = await axios.post(apiUrl, formData, {
+      headers: {
+        'Authorization': authHeader,
+        ...formData.getHeaders()
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity
+    });
+
+    console.log(`✅ File uploaded successfully to Talygen API`);
+
+    const apiResponse = response.data;
+
+    // Store response in database
+    console.log(`💾 Saving upload response to database...`);
+    const result = await query(
+      `INSERT INTO file_uploads (
+        original_file_name, file_name, file_path, file_thumb_path, folder_id,
+        file_type, file_size, file_id, upload_status, error_msg, api_response
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        fileName,
+        apiResponse.FileName || null,
+        apiResponse.FilePath || null,
+        apiResponse.FileThumbPath || null,
+        apiResponse.FolderId || null,
+        apiResponse.FileType || null,
+        apiResponse.FileSize || null,
+        JSON.stringify(apiResponse.FileId || apiResponse.FileID || null),
+        apiResponse.UploadStatus || null,
+        apiResponse.ErrorMsg || null,
+        JSON.stringify(apiResponse)
+      ]
+    );
+
+    const savedUpload = await queryOne(
+      'SELECT * FROM file_uploads WHERE id = ?',
+      [result.insertId]
+    );
+    console.log(`✅ Upload response saved to database (ID: ${result.insertId})`);
+
+    // No cleanup needed - file was in memory only, not saved to disk
+
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`✅ SUCCESS - Upload completed in ${totalTime}s`);
+    console.log(`==========================================\n`);
+
+    res.json({
+      success: true,
+      message: 'File uploaded successfully to Talygen',
+      data: {
+        id: savedUpload.id,
+        originalFileName: savedUpload.original_file_name,
+        fileName: savedUpload.file_name,
+        filePath: savedUpload.file_path,
+        fileThumbPath: savedUpload.file_thumb_path,
+        fileSize: savedUpload.file_size,
+        uploadStatus: savedUpload.upload_status,
+        createdAt: savedUpload.created_at
+      },
+      apiResponse: apiResponse
+    });
+  } catch (error) {
+    // No cleanup needed - file was in memory only, not saved to disk
+
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.error(`\n❌ TALYGEN UPLOAD FAILED after ${totalTime}s`);
+    console.error('Error:', error.message);
+    if (error.response) {
+      console.error('API Response Status:', error.response.status);
+      console.error('API Response Data:', error.response.data);
+    }
+    console.error('Stack:', error.stack);
+    console.log(`==========================================\n`);
+    
+    res.status(500).json({
+      error: 'Failed to upload file to Talygen',
+      message: error.message,
+      details: error.response?.data || null
+    });
+  }
+});
+
+// Download file from Talygen using stored FilePath
+router.get('/talygen/:id/download', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log(`📥 Downloading file from Talygen (Upload ID: ${id})`);
+
+    const fileUpload = await queryOne(
+      'SELECT * FROM file_uploads WHERE id = ?',
+      [id]
+    );
+
+    if (!fileUpload) {
+      return res.status(404).json({ error: 'File upload record not found' });
+    }
+
+    if (!fileUpload.file_path) {
+      return res.status(404).json({ error: 'File path not available for this upload' });
+    }
+
+    // Download file from Talygen
+    const response = await axios.get(fileUpload.file_path, {
+      responseType: 'stream'
+    });
+
+    // Determine content type from file extension or response headers
+    const path = require('path');
+    const fileExt = path.extname(fileUpload.file_name || fileUpload.original_file_name || '').toLowerCase();
+    const mimeTypes = {
+      '.pdf': 'application/pdf',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.txt': 'text/plain',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg'
+    };
+    const contentType = response.headers['content-type'] || mimeTypes[fileExt] || 'application/octet-stream';
+
+    // Get filename for download
+    const downloadFileName = fileUpload.file_name || fileUpload.original_file_name || `file-${id}${fileExt}`;
+
+    // Set headers for file download
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${downloadFileName}"; filename*=UTF-8''${encodeURIComponent(downloadFileName)}`);
+
+    // Pipe the response stream to the client
+    response.data.pipe(res);
+
+    console.log(`✅ File download initiated: ${downloadFileName}`);
+  } catch (error) {
+    console.error('Error downloading file from Talygen:', error);
+    
+    if (error.response) {
+      console.error('API Response Status:', error.response.status);
+      console.error('API Response Data:', error.response.data);
+    }
+
+    res.status(500).json({
+      error: 'Failed to download file from Talygen',
+      message: error.message
+    });
+  }
+});
+
+// Get list of uploaded files
+router.get('/talygen', authenticate, async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const files = await query(
+      `SELECT id, original_file_name, file_name, file_path, file_thumb_path, 
+              file_size, upload_status, created_at 
+       FROM file_uploads 
+       ORDER BY created_at DESC 
+       LIMIT ? OFFSET ?`,
+      [parseInt(limit), offset]
+    );
+
+    const totalCount = await queryOne(
+      'SELECT COUNT(*) as count FROM file_uploads'
+    );
+
+    res.json({
+      success: true,
+      data: files,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: totalCount.count,
+        totalPages: Math.ceil(totalCount.count / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching uploaded files:', error);
+    res.status(500).json({
+      error: 'Failed to fetch uploaded files',
       message: error.message
     });
   }
