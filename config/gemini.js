@@ -3,7 +3,6 @@ const dotenv = require('dotenv');
 dotenv.config();
 //const apiKey = process.env.GEMINI_API_KEY;
 const apiKey = process.env.GEMINI_API_KEY ;
-debugger;
 if (!apiKey) {
   throw new Error('Missing Gemini API key. Please check your .env file.');
 }

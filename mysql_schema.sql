@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS candidate_evaluations (
 -- Create file_uploads table for storing Talygen API upload responses
 CREATE TABLE IF NOT EXISTS file_uploads (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  resume_id BIGINT NULL,
   original_file_name VARCHAR(255) NOT NULL,
   file_name VARCHAR(255),
   file_path TEXT,
@@ -104,8 +105,10 @@ CREATE TABLE IF NOT EXISTS file_uploads (
   api_response JSON,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_resume_id (resume_id),
   INDEX idx_original_file_name (original_file_name),
   INDEX idx_created_at (created_at DESC),
-  INDEX idx_upload_status (upload_status)
+  INDEX idx_upload_status (upload_status),
+  FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

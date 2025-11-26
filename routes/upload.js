@@ -14,7 +14,7 @@ const { authenticate, requireWriteAccess } = require('../middleware/auth');
 const router = express.Router();
 
 // Helper function to upload file to Talygen API and store response
-const uploadToTalygen = async (filePath, fileName, mimetype) => {
+const uploadToTalygen = async (filePath, fileName, mimetype, resumeId = null) => {
   try {
     let apiToken = process.env.TALYGEN_API_TOKEN;
     const apiUrl = process.env.TALYGEN_API_URL || 'https://stagefilemedia.talygen.com/api/UploadStreamNew';
@@ -29,7 +29,7 @@ const uploadToTalygen = async (filePath, fileName, mimetype) => {
 
     // Log token status (first 4 chars only for debugging)
     const tokenPreview = apiToken.length > 4 ? apiToken.substring(0, 4) + '...' : '***';
-    console.log(`📤 Uploading file to Talygen API: ${fileName} (Token: ${tokenPreview}, Length: ${apiToken.length})`);
+    console.log(`📤 Uploading file to Talygen API: ${fileName} (Token: ${tokenPreview}, Length: ${apiToken.length})${resumeId ? ` [Resume ID: ${resumeId}]` : ''}`);
 
     // Create form data
     const formData = new FormData();
@@ -57,13 +57,14 @@ const uploadToTalygen = async (filePath, fileName, mimetype) => {
 
     const apiResponse = response.data;
 
-    // Store response in database
+    // Store response in database with resume_id if provided
     const result = await query(
       `INSERT INTO file_uploads (
-        original_file_name, file_name, file_path, file_thumb_path, folder_id,
+        resume_id, original_file_name, file_name, file_path, file_thumb_path, folder_id,
         file_type, file_size, file_id, upload_status, error_msg, api_response
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        resumeId || null,
         fileName,
         apiResponse.FileName || null,
         apiResponse.FilePath || null,
@@ -78,7 +79,7 @@ const uploadToTalygen = async (filePath, fileName, mimetype) => {
       ]
     );
 
-    console.log(`✅ Talygen upload response saved to database (ID: ${result.insertId})`);
+    console.log(`✅ Talygen upload response saved to database (ID: ${result.insertId}${resumeId ? `, linked to Resume ID: ${resumeId}` : ''})`);
 
     return {
       fileUploadId: result.insertId,
@@ -251,14 +252,6 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
     const fileName = req.file.originalname; // Original filename with extension
     const mimetype = req.file.mimetype;
 
-    // Upload to Talygen API and store response
-    let talygenUpload = null;
-    try {
-      talygenUpload = await uploadToTalygen(filePath, fileName, mimetype);
-    } catch (talygenError) {
-      console.error(`⚠️  Talygen upload failed, continuing with resume processing:`, talygenError.message);
-    }
-
     // Extract text from file
     const resumeText = await extractTextFromFile(filePath, mimetype);
 
@@ -305,6 +298,14 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
       [result.insertId]
     );
     console.log(`✅ Resume saved to database (ID: ${result.insertId})`);
+
+    // Upload to Talygen API and store response (now with resume_id)
+    let talygenUpload = null;
+    try {
+      talygenUpload = await uploadToTalygen(filePath, fileName, mimetype, result.insertId);
+    } catch (talygenError) {
+      console.error(`⚠️  Talygen upload failed, continuing with resume processing:`, talygenError.message);
+    }
 
     // Parse JSON fields safely
     const parsedResume = {
@@ -468,14 +469,6 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
         const fileName = file.originalname;
         const mimetype = file.mimetype;
 
-        // Upload to Talygen API and store response
-        let talygenUpload = null;
-        try {
-          talygenUpload = await uploadToTalygen(filePath, fileName, mimetype);
-        } catch (talygenError) {
-          console.error(`   ⚠️  Talygen upload failed, continuing with resume processing:`, talygenError.message);
-        }
-
         console.log(`   📄 Extracting text from file...`);
         // Extract text from file
         const resumeText = await extractTextFromFile(filePath, mimetype);
@@ -532,6 +525,14 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
           [result.insertId]
         );
         console.log(`   ✅ Resume saved to database (ID: ${result.insertId})`);
+
+        // Upload to Talygen API and store response (now with resume_id)
+        let talygenUpload = null;
+        try {
+          talygenUpload = await uploadToTalygen(filePath, fileName, mimetype, result.insertId);
+        } catch (talygenError) {
+          console.error(`   ⚠️  Talygen upload failed, continuing with resume processing:`, talygenError.message);
+        }
 
         // Parse JSON fields safely
         const parsedResume = {
@@ -718,14 +719,15 @@ router.post('/talygen', authenticate, requireWriteAccess, uploadMemory.single('f
 
     const apiResponse = response.data;
 
-    // Store response in database
+    // Store response in database (standalone upload, no resume_id)
     console.log(`💾 Saving upload response to database...`);
     const result = await query(
       `INSERT INTO file_uploads (
-        original_file_name, file_name, file_path, file_thumb_path, folder_id,
+        resume_id, original_file_name, file_name, file_path, file_thumb_path, folder_id,
         file_type, file_size, file_id, upload_status, error_msg, api_response
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        null, // Standalone upload, not linked to a resume
         fileName,
         apiResponse.FileName || null,
         apiResponse.FilePath || null,
