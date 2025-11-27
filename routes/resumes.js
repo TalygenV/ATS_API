@@ -124,113 +124,85 @@ router.get('/search/:query', authenticate, async (req, res) => {
 
 // Download original resume file (all authenticated users can download)
 router.get('/:id/download', authenticate, async (req, res) => {
+  const startTime = Date.now();
+  console.log(`\n==========================================`);
+  console.log(`📥 DOWNLOAD REQUEST - Resume ID: ${req.params.id}`);
+  console.log(`==========================================`);
+  
   try {
     const { id } = req.params;
     const fs = require('fs').promises;
     const path = require('path');
 
+    console.log(`🔍 Step 1: Looking up resume with ID: ${id}`);
     const resume = await queryOne(
-      'SELECT file_path, file_name FROM resumes WHERE id = ?',
+      'SELECT  file_name FROM resumes WHERE id = ?',
       [id]
     );
 
     if (!resume) {
+      console.error(`❌ Resume not found with ID: ${id}`);
       return res.status(404).json({ error: 'Resume not found' });
     }
 
+    console.log(`✅ Resume found:`);
+    console.log(`   - File Name: ${resume.file_name}`);
+
     // First, try to find the file in file_uploads table (Talygen storage)
-    const fileUpload = await queryOne(
-      'SELECT * FROM file_uploads WHERE original_file_name = ? ORDER BY created_at DESC LIMIT 1',
-      [resume.file_name]
+    // Use resume_id for direct connection
+    console.log(`\n🔍 Step 2: Searching for file_upload record...`);
+    console.log(`   - Searching by resume_id: ${id}`);
+    
+    let fileUpload = await queryOne(
+      'SELECT * FROM file_uploads WHERE resume_id = ? ORDER BY created_at DESC LIMIT 1',
+      [id]
     );
 
-    if (fileUpload && fileUpload.file_path) {
-      // File is stored in Talygen, download from there
-      console.log(`📥 Downloading resume from Talygen: ${fileUpload.file_path}`);
+    // Fallback: If not found by resume_id, try filename matching (for backward compatibility)
+    if (!fileUpload) {
+      console.log(`   - Not found by resume_id, trying filename match (backward compatibility)...`);
+      console.log(`   - Searching by exact match: original_file_name = "${resume.file_name}"`);
       
-      try {
-        const response = await axios.get(fileUpload.file_path, {
-          responseType: 'stream'
-        });
+      fileUpload = await queryOne(
+        'SELECT * FROM file_uploads WHERE original_file_name = ? ORDER BY created_at DESC LIMIT 1',
+        [resume.file_name]
+      );
 
-        // Determine content type from file extension or response headers
-        const fileExt = path.extname(fileUpload.file_name || fileUpload.original_file_name || '').toLowerCase();
-        const mimeTypes = {
-          '.pdf': 'application/pdf',
-          '.doc': 'application/msword',
-          '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          '.txt': 'text/plain',
-          '.png': 'image/png',
-          '.jpg': 'image/jpeg',
-          '.jpeg': 'image/jpeg'
-        };
-        const contentType = response.headers['content-type'] || mimeTypes[fileExt] || 'application/octet-stream';
+      // If not found by exact match, try case-insensitive match
+      if (!fileUpload) {
+        console.log(`   - Exact match not found, trying case-insensitive match...`);
+        fileUpload = await queryOne(
+          'SELECT * FROM file_uploads WHERE LOWER(original_file_name) = LOWER(?) ORDER BY created_at DESC LIMIT 1',
+          [resume.file_name]
+        );
+      }
 
-        // Get filename for download
-        const downloadFileName = fileUpload.file_name || fileUpload.original_file_name || `resume-${id}${fileExt}`;
-
-        // Set headers for file download
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Disposition', `attachment; filename="${downloadFileName}"; filename*=UTF-8''${encodeURIComponent(downloadFileName)}`);
-
-        // Pipe the response stream to the client
-        response.data.pipe(res);
-
-        console.log(`✅ File download initiated from Talygen: ${downloadFileName}`);
-        return;
-      } catch (talygenError) {
-        console.error('⚠️  Error downloading from Talygen, falling back to local file:', talygenError.message);
-        // Fall through to local file download
+      // If still not found, try matching by file_name column
+      if (!fileUpload) {
+        console.log(`   - Case-insensitive match not found, trying file_name column match...`);
+        fileUpload = await queryOne(
+          'SELECT * FROM file_uploads WHERE file_name = ? OR LOWER(file_name) = LOWER(?) ORDER BY created_at DESC LIMIT 1',
+          [resume.file_name, resume.file_name]
+        );
       }
     }
-
-    // Fallback: Try to download from local file system
-    if (!resume.file_path) {
-      return res.status(404).json({ error: 'Original file not found. File may have been deleted.' });
-    }
-
-    // Check if file exists on disk
-    try {
-      await fs.access(resume.file_path);
-    } catch (accessError) {
-      return res.status(404).json({ error: 'Original file not found on server. The file may have been moved or deleted.' });
-    }
-
-    // Get file extension from the actual file path
-    const fileExt = path.extname(resume.file_path).toLowerCase();
-    const mimeTypes = {
-      '.pdf': 'application/pdf',
-      '.doc': 'application/msword',
-      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      '.txt': 'text/plain'
-    };
-    const contentType = mimeTypes[fileExt] || 'application/octet-stream';
-
-    // Get original filename from database
-    let originalFileName = resume.file_name || `resume-${id}`;
+    res.send(fileUpload);
     
-    // Ensure the filename has the correct extension matching the actual file
-    const originalExt = path.extname(originalFileName).toLowerCase();
-    if (originalExt !== fileExt) {
-      // Remove any existing extension and add the correct one
-      originalFileName = originalFileName.replace(/\.[^/.]+$/, '') + fileExt;
-    }
     
-    // Sanitize filename but preserve extension
-    const nameWithoutExt = originalFileName.replace(/\.[^/.]+$/, '');
-    const sanitizedName = nameWithoutExt.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const finalFileName = sanitizedName + fileExt;
-
-    // Set headers for file download with proper encoding
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${finalFileName}"; filename*=UTF-8''${encodeURIComponent(finalFileName)}`);
-
-    // Read and send the file
-    const fileBuffer = await fs.readFile(resume.file_path);
-    res.send(fileBuffer);
-    console.log(`✅ File downloaded from local storage: ${finalFileName}`);
   } catch (error) {
-    console.error('Error downloading resume:', error);
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.error(`\n❌ ERROR downloading resume:`);
+    console.error(`   - Error Message: ${error.message}`);
+    console.error(`   - Error Code: ${error.code || 'N/A'}`);
+    console.error(`   - Error Name: ${error.name || 'N/A'}`);
+    if (error.response) {
+      console.error(`   - Response Status: ${error.response.status || 'N/A'}`);
+      console.error(`   - Response Status Text: ${error.response.statusText || 'N/A'}`);
+    }
+    console.error(`   - Stack Trace:`, error.stack);
+    console.error(`⏱️  Total time before error: ${totalTime}s`);
+    console.error(`==========================================\n`);
+    
     res.status(500).json({
       error: 'Failed to download resume',
       message: error.message
