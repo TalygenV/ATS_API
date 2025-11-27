@@ -106,6 +106,11 @@ IMPORTANT INSTRUCTIONS:
       // Clean the response to extract JSON
       let jsonText = text.trim();
       
+      // Remove null bytes and other control characters that can corrupt JSON
+      // Replace null bytes (\u0000) and other problematic control characters
+      jsonText = jsonText.replace(/\u0000/g, ''); // Remove null bytes
+      jsonText = jsonText.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, ''); // Remove other control chars except \n, \r, \t
+      
       // Remove markdown code blocks if present
       jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
       
@@ -113,9 +118,25 @@ IMPORTANT INSTRUCTIONS:
       const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         jsonText = jsonMatch[0];
+        // Clean again after extraction in case the match included some control chars
+        jsonText = jsonText.replace(/\u0000/g, '').replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, '');
       }
 
-      let matchData = JSON.parse(jsonText);
+      // Validate that we have valid JSON text before parsing
+      if (!jsonText || jsonText.trim().length === 0) {
+        throw new Error('Empty or invalid JSON response from Gemini API');
+      }
+
+      let matchData;
+      try {
+        matchData = JSON.parse(jsonText);
+      } catch (parseError) {
+        // Log the problematic JSON for debugging
+        console.error(`   ❌ JSON Parse Error: ${parseError.message}`);
+        console.error(`   ❌ JSON text length: ${jsonText.length}`);
+        console.error(`   ❌ JSON preview (first 500 chars): ${jsonText.substring(0, 500)}`);
+        throw new Error(`Failed to parse JSON response: ${parseError.message}. Response may contain invalid characters.`);
+      }
       
       // Validate and normalize the data
       matchData = validateAndNormalizeMatchData(matchData);

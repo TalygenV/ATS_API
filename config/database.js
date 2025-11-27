@@ -1,5 +1,9 @@
 const mysql = require('mysql2/promise');
 
+// MySQL type constants
+const MYSQL_TYPE_JSON = 0xf5; // 245 - JSON type
+const MYSQL_TYPE_BLOB = 252;  // BLOB type (JSON_OBJECT can return this)
+
 // Database configuration
 const dbConfig = {
   host: process.env.DB_HOST || '174.127.114.194',
@@ -16,9 +20,18 @@ const dbConfig = {
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
   typeCast: function (field, next) {
-    // Handle JSON fields - return as strings so we can parse them ourselves
-    if (field.type === 'JSON') {
-      return field.string();
+    // Handle JSON fields - return as strings with UTF-8 encoding so we can parse them ourselves
+    // JSON_OBJECT() results may come back as BLOB type, so we check both JSON columnType and known JSON column names
+    const jsonColumnNames = ['resume', 'job_description', 'skills', 'experience', 'education', 'certifications', 'api_response'];
+    
+    // Check if it's a JSON column type, BLOB type (for JSON_OBJECT results), or a known JSON column name
+    const isJsonType = field.columnType === MYSQL_TYPE_JSON || 
+                       field.columnType === MYSQL_TYPE_BLOB ||
+                       field.type === 'JSON' ||
+                       jsonColumnNames.includes(field.name);
+    
+    if (isJsonType) {
+      return field.string('utf8');
     }
     return next();
   }

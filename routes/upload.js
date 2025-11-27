@@ -462,6 +462,12 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
     for (let i = 0; i < req.files.length; i++) {
       const file = req.files[i];
       const fileStartTime = Date.now(); // Define outside try block so it's available in catch
+      
+      // Add a small delay between files to avoid overwhelming the API (except for the first file)
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between files
+      }
+      
       try {
         console.log(`[${i + 1}/${req.files.length}] Processing: ${file.originalname}`);
         
