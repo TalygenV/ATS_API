@@ -253,10 +253,91 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
       resume: safeParseJSON(eval.resume, null)
     }));
 
+    // Detect and mark duplicates
+    // Group by email (if available) or by name
+    const duplicateGroups = new Map();
+    const seenKeys = new Set();
+
+    // First pass: group evaluations by email/name
+    for (const eval of parsedEvaluations) {
+      // Create a unique key for grouping duplicates
+      // Use email if available, otherwise use name
+      const email = eval.email?.toLowerCase().trim() || eval.resume?.email?.toLowerCase().trim();
+      const name = eval.candidate_name?.toLowerCase().trim() || eval.resume?.name?.toLowerCase().trim();
+      
+      let groupKey = null;
+      if (email) {
+        groupKey = `email:${email}`;
+      } else if (name) {
+        groupKey = `name:${name}`;
+      }
+
+      if (groupKey) {
+        if (!duplicateGroups.has(groupKey)) {
+          duplicateGroups.set(groupKey, []);
+        }
+        duplicateGroups.get(groupKey).push(eval);
+      }
+    }
+
+    // Second pass: process evaluations in original order, mark duplicates
+    const processedEvaluations = [];
+    const processedIds = new Set();
+    
+    for (const eval of parsedEvaluations) {
+      const email = eval.email?.toLowerCase().trim() || eval.resume?.email?.toLowerCase().trim();
+      const name = eval.candidate_name?.toLowerCase().trim() || eval.resume?.name?.toLowerCase().trim();
+      
+      let groupKey = null;
+      if (email) {
+        groupKey = `email:${email}`;
+      } else if (name) {
+        groupKey = `name:${name}`;
+      }
+
+      if (groupKey) {
+        const group = duplicateGroups.get(groupKey);
+        if (group && group.length > 1) {
+          // Check if this is the first occurrence in the group (maintains sort order)
+          const firstInGroup = group[0];
+          if (firstInGroup.id === eval.id && !processedIds.has(eval.id)) {
+            // First occurrence - mark as duplicate
+            processedEvaluations.push({
+              ...eval,
+              isDuplicate: true,
+              duplicateCount: group.length - 1
+            });
+            processedIds.add(eval.id);
+          }
+          // Skip other occurrences (duplicates) - they're already handled
+        } else {
+          // Only one in group - not a duplicate
+          if (!processedIds.has(eval.id)) {
+            processedEvaluations.push({
+              ...eval,
+              isDuplicate: false,
+              duplicateCount: 0
+            });
+            processedIds.add(eval.id);
+          }
+        }
+      } else {
+        // No email or name, treat as unique
+        if (!processedIds.has(eval.id)) {
+          processedEvaluations.push({
+            ...eval,
+            isDuplicate: false,
+            duplicateCount: 0
+          });
+          processedIds.add(eval.id);
+        }
+      }
+    }
+
     res.json({
       success: true,
-      count: parsedEvaluations.length,
-      data: parsedEvaluations
+      count: processedEvaluations.length,
+      data: processedEvaluations
     });
   } catch (error) {
     console.error('Error fetching evaluations by job description:', error);
