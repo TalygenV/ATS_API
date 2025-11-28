@@ -204,7 +204,7 @@ const handleMulterError = (err, req, res, next) => {
     if (err.code === 'LIMIT_FILE_COUNT') {
       return res.status(400).json({
         success: false,
-        error: 'Too many files. Maximum is 50 files.'
+        error: 'Too many files. Maximum is 5 files for bulk upload.'
       });
     }
     return res.status(400).json({
@@ -415,8 +415,8 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
   }
 });
 
-// Multiple files upload (only HR and Admin can upload)
-router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 50), handleMulterError, async (req, res) => {
+// Multiple files upload (only HR and Admin can upload) - Maximum 5 files
+router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5), handleMulterError, async (req, res) => {
   const startTime = Date.now();
   console.log('\n========== BULK UPLOAD STARTED ==========');
   console.log(`Timestamp: ${new Date().toISOString()}`);
@@ -426,6 +426,25 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
     if (!req.files || req.files.length === 0) {
       console.log('❌ ERROR: No files uploaded');
       return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    // Enforce maximum 5 files limit for bulk upload
+    const MAX_BULK_FILES = 5;
+    if (req.files.length > MAX_BULK_FILES) {
+      console.log(`❌ ERROR: Too many files. Maximum ${MAX_BULK_FILES} files allowed for bulk upload. Received: ${req.files.length}`);
+      // Clean up uploaded files
+      for (const file of req.files) {
+        try {
+          await fsPromises.unlink(file.path);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }
+      return res.status(400).json({ 
+        error: `Too many files. Maximum ${MAX_BULK_FILES} files allowed for bulk upload.`,
+        received: req.files.length,
+        maxAllowed: MAX_BULK_FILES
+      });
     }
 
     console.log(`📁 Total files received: ${req.files.length}`);
