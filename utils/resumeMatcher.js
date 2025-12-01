@@ -48,7 +48,7 @@ IMPORTANT INSTRUCTIONS:
 3. For skills_match: Compare technical skills, tools, frameworks, and soft skills mentioned in the job description with those in the resume
 4. For experience_match: Consider years of experience, relevant industry experience, role similarity, and achievements
 5. For education_match: Consider degree level, field of study, and institution quality
-6. For overall_match: Calculate a weighted average (skills: 40%, experience: 40%, education: 20%)
+6. For overall_match: Calculate a weighted average (skills: 50%, experience: 40%, education: 10%)
 7. Set status as:
    - "accepted" if overall_match >= 70
    - "pending" if overall_match >= 50 and < 70
