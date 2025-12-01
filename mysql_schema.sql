@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS job_descriptions (
   title VARCHAR(255) NOT NULL,
   description TEXT NOT NULL,
   requirements TEXT,
+  interviewers JSON,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_title (title),
@@ -76,6 +77,13 @@ CREATE TABLE IF NOT EXISTS candidate_evaluations (
   education_details TEXT,
   status VARCHAR(50) DEFAULT 'pending',
   rejection_reason TEXT,
+  interviewer_id VARCHAR(36) NULL,
+  interview_date DATETIME NULL,
+  interviewer_feedback JSON NULL,
+  interviewer_status ENUM('pending', 'selected', 'rejected', 'on_hold') DEFAULT 'pending',
+  interviewer_hold_reason TEXT NULL,
+  hr_final_status ENUM('pending', 'selected', 'rejected', 'on_hold') DEFAULT 'pending',
+  hr_final_reason TEXT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY unique_resume_job (resume_id, job_description_id),
@@ -83,9 +91,14 @@ CREATE TABLE IF NOT EXISTS candidate_evaluations (
   INDEX idx_job_description_id (job_description_id),
   INDEX idx_overall_match (overall_match DESC),
   INDEX idx_status (status),
+  INDEX idx_interviewer_id (interviewer_id),
+  INDEX idx_interviewer_status (interviewer_status),
+  INDEX idx_hr_final_status (hr_final_status),
+  INDEX idx_interview_date (interview_date),
   INDEX idx_created_at (created_at DESC),
   FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE CASCADE,
-  FOREIGN KEY (job_description_id) REFERENCES job_descriptions(id) ON DELETE CASCADE
+  FOREIGN KEY (job_description_id) REFERENCES job_descriptions(id) ON DELETE CASCADE,
+  FOREIGN KEY (interviewer_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create file_uploads table for storing Talygen API upload responses
@@ -110,5 +123,24 @@ CREATE TABLE IF NOT EXISTS file_uploads (
   INDEX idx_created_at (created_at DESC),
   INDEX idx_upload_status (upload_status),
   FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Create interview_assignments table to track interview assignment history
+CREATE TABLE IF NOT EXISTS interview_assignments (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  evaluation_id BIGINT NOT NULL,
+  interviewer_id VARCHAR(36) NOT NULL,
+  interview_date DATETIME NOT NULL,
+  assigned_by VARCHAR(36) NOT NULL,
+  notes TEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_evaluation_id (evaluation_id),
+  INDEX idx_interviewer_id (interviewer_id),
+  INDEX idx_interview_date (interview_date),
+  INDEX idx_assigned_by (assigned_by),
+  FOREIGN KEY (evaluation_id) REFERENCES candidate_evaluations(id) ON DELETE CASCADE,
+  FOREIGN KEY (interviewer_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

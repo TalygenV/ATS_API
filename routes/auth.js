@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { query, queryOne } = require('../config/database');
-const { authenticate, requireAdmin } = require('../middleware/auth');
+const { authenticate, requireAdmin, requireWriteAccess } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -207,6 +207,38 @@ router.post('/logout', authenticate, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to logout',
+      message: error.message
+    });
+  }
+});
+
+// Get all users (for HR/Admin to select interviewers)
+router.get('/users', authenticate, requireWriteAccess, async (req, res) => {
+  try {
+    const { role } = req.query;
+    
+    let sql = 'SELECT id, email, role, full_name, created_at FROM users WHERE 1=1';
+    const params = [];
+    
+    if (role) {
+      sql += ' AND role = ?';
+      params.push(role);
+    }
+    
+    sql += ' ORDER BY full_name, email';
+    
+    const users = await query(sql, params);
+    
+    res.json({
+      success: true,
+      count: users.length,
+      data: users
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch users',
       message: error.message
     });
   }

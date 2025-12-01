@@ -9,7 +9,7 @@ const dbConfig = {
   host: process.env.DB_HOST || '174.127.114.194',
   user: process.env.DB_USER || 'seth',
   password: process.env.DB_PASSWORD || '@Password1#',
-  database: process.env.DB_NAME || 'ats_system',
+  database: process.env.DB_NAME || 'ats_system_stage',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,

@@ -11,10 +11,16 @@ router.get('/', authenticate, async (req, res) => {
       'SELECT * FROM job_descriptions ORDER BY created_at DESC'
     );
 
+    // Parse JSON fields
+    const parsedJobDescriptions = jobDescriptions.map(jd => ({
+      ...jd,
+      interviewers: jd.interviewers ? JSON.parse(jd.interviewers) : []
+    }));
+
     res.json({
       success: true,
-      count: jobDescriptions.length,
-      data: jobDescriptions
+      count: parsedJobDescriptions.length,
+      data: parsedJobDescriptions
     });
   } catch (error) {
     console.error('Error fetching job descriptions:', error);
@@ -39,9 +45,15 @@ router.get('/:id', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Job description not found' });
     }
 
+    // Parse JSON fields
+    const parsedJobDescription = {
+      ...jobDescription,
+      interviewers: jobDescription.interviewers ? JSON.parse(jobDescription.interviewers) : []
+    };
+
     res.json({
       success: true,
-      data: jobDescription
+      data: parsedJobDescription
     });
   } catch (error) {
     console.error('Error fetching job description:', error);
@@ -55,7 +67,7 @@ router.get('/:id', authenticate, async (req, res) => {
 // Create new job description (only HR and Admin can create)
 router.post('/', authenticate, requireWriteAccess, async (req, res) => {
   try {
-    const { title, description, requirements } = req.body;
+    const { title, description, requirements, interviewers } = req.body;
 
     if (!title || !description) {
       return res.status(400).json({
@@ -63,9 +75,33 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
       });
     }
 
+    // Validate interviewers if provided
+    let interviewersJson = null;
+    if (interviewers) {
+      if (!Array.isArray(interviewers)) {
+        return res.status(400).json({
+          error: 'Interviewers must be an array'
+        });
+      }
+      // Validate that all interviewer IDs exist and are Interviewer role
+      if (interviewers.length > 0) {
+        const placeholders = interviewers.map(() => '?').join(',');
+        const validInterviewers = await query(
+          `SELECT id FROM users WHERE id IN (${placeholders}) AND role = 'Interviewer'`,
+          interviewers
+        );
+        if (validInterviewers.length !== interviewers.length) {
+          return res.status(400).json({
+            error: 'One or more invalid interviewer IDs provided'
+          });
+        }
+      }
+      interviewersJson = JSON.stringify(interviewers);
+    }
+
     const result = await query(
-      'INSERT INTO job_descriptions (title, description, requirements) VALUES (?, ?, ?)',
-      [title.trim(), description.trim(), requirements ? requirements.trim() : null]
+      'INSERT INTO job_descriptions (title, description, requirements, interviewers) VALUES (?, ?, ?, ?)',
+      [title.trim(), description.trim(), requirements ? requirements.trim() : null, interviewersJson]
     );
 
     const jobDescription = await queryOne(
@@ -73,10 +109,16 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
       [result.insertId]
     );
 
+    // Parse JSON fields
+    const parsedJobDescription = {
+      ...jobDescription,
+      interviewers: jobDescription.interviewers ? JSON.parse(jobDescription.interviewers) : []
+    };
+
     res.json({
       success: true,
       message: 'Job description created successfully',
-      data: jobDescription
+      data: parsedJobDescription
     });
   } catch (error) {
     console.error('Error creating job description:', error);
@@ -91,7 +133,7 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
 router.put('/:id', authenticate, requireWriteAccess, async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, requirements } = req.body;
+    const { title, description, requirements, interviewers } = req.body;
 
     if (!title || !description) {
       return res.status(400).json({
@@ -99,9 +141,49 @@ router.put('/:id', authenticate, requireWriteAccess, async (req, res) => {
       });
     }
 
+    // Validate interviewers if provided
+    let interviewersJson = null;
+    if (interviewers !== undefined) {
+      if (!Array.isArray(interviewers)) {
+        return res.status(400).json({
+          error: 'Interviewers must be an array'
+        });
+      }
+      // Validate that all interviewer IDs exist and are Interviewer role
+      if (interviewers.length > 0) {
+        const placeholders = interviewers.map(() => '?').join(',');
+        const validInterviewers = await query(
+          `SELECT id FROM users WHERE id IN (${placeholders}) AND role = 'Interviewer'`,
+          interviewers
+        );
+        if (validInterviewers.length !== interviewers.length) {
+          return res.status(400).json({
+            error: 'One or more invalid interviewer IDs provided'
+          });
+        }
+      }
+      interviewersJson = JSON.stringify(interviewers);
+    }
+
+    // Build update query dynamically
+    let updateFields = ['title = ?', 'description = ?'];
+    let updateValues = [title.trim(), description.trim()];
+
+    if (requirements !== undefined) {
+      updateFields.push('requirements = ?');
+      updateValues.push(requirements ? requirements.trim() : null);
+    }
+
+    if (interviewers !== undefined) {
+      updateFields.push('interviewers = ?');
+      updateValues.push(interviewersJson);
+    }
+
+    updateValues.push(id);
+
     const result = await query(
-      'UPDATE job_descriptions SET title = ?, description = ?, requirements = ? WHERE id = ?',
-      [title.trim(), description.trim(), requirements ? requirements.trim() : null, id]
+      `UPDATE job_descriptions SET ${updateFields.join(', ')} WHERE id = ?`,
+      updateValues
     );
 
     if (result.affectedRows === 0) {
@@ -113,10 +195,16 @@ router.put('/:id', authenticate, requireWriteAccess, async (req, res) => {
       [id]
     );
 
+    // Parse JSON fields
+    const parsedJobDescription = {
+      ...jobDescription,
+      interviewers: jobDescription.interviewers ? JSON.parse(jobDescription.interviewers) : []
+    };
+
     res.json({
       success: true,
       message: 'Job description updated successfully',
-      data: jobDescription
+      data: parsedJobDescription
     });
   } catch (error) {
     console.error('Error updating job description:', error);
