@@ -545,6 +545,84 @@ router.post('/slots/generate', authenticate, authorize('Interviewer'), async (re
   }
 });
 
+// Create selected time slots (Interviewer only)
+router.post('/slots/create-selected', authenticate, authorize('Interviewer'), async (req, res) => {
+  try {
+    const { slots } = req.body;
+
+    if (!slots || !Array.isArray(slots) || slots.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'slots array is required and must not be empty'
+      });
+    }
+
+    // Validate each slot
+    for (const slot of slots) {
+      if (!slot.start_time || !slot.end_time) {
+        return res.status(400).json({
+          success: false,
+          error: 'Each slot must have start_time and end_time'
+        });
+      }
+
+      const startDateTime = new Date(slot.start_time);
+      const endDateTime = new Date(slot.end_time);
+
+      if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid date or time format in slots'
+        });
+      }
+
+      if (endDateTime <= startDateTime) {
+        return res.status(400).json({
+          success: false,
+          error: 'end_time must be after start_time for each slot'
+        });
+      }
+    }
+
+    // Insert slots (using INSERT IGNORE to avoid duplicates)
+    const values = [];
+    const placeholders = [];
+    slots.forEach(slot => {
+      placeholders.push('(?, ?, ?, ?)');
+      values.push(req.user.id, slot.start_time, slot.end_time, 0);
+    });
+
+    await query(
+      `INSERT IGNORE INTO interviewer_time_slots (interviewer_id, start_time, end_time, is_booked)
+       VALUES ${placeholders.join(', ')}`,
+      values
+    );
+
+    // Get the created slots
+    const startTimes = slots.map(s => s.start_time);
+    const placeholders2 = startTimes.map(() => '?').join(',');
+    const createdSlots = await query(
+      `SELECT * FROM interviewer_time_slots 
+       WHERE interviewer_id = ? AND start_time IN (${placeholders2})
+       ORDER BY start_time ASC`,
+      [req.user.id, ...startTimes]
+    );
+
+    res.json({
+      success: true,
+      message: `${createdSlots.length} time slot(s) created successfully`,
+      data: createdSlots
+    });
+  } catch (error) {
+    console.error('Error creating selected time slots:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create time slots',
+      message: error.message
+    });
+  }
+});
+
 // Get current interviewer's time slots
 router.get('/my-slots', authenticate, authorize('Interviewer'), async (req, res) => {
   try {
