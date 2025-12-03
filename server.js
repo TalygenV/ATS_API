@@ -8,6 +8,7 @@ const jobDescriptionRoutes = require('./routes/jobDescriptions');
 const evaluationRoutes = require('./routes/evaluations');
 const authRoutes = require('./routes/auth');
 const interviewRoutes = require('./routes/interviews');
+const candidateLinkRoutes = require('./routes/candidateLinks');
 
 dotenv.config();
 
@@ -26,6 +27,7 @@ app.use('/api/resumes', resumeRoutes);
 app.use('/api/job-descriptions', jobDescriptionRoutes);
 app.use('/api/evaluations', evaluationRoutes);
 app.use('/api/interviews', interviewRoutes);
+app.use('/api/candidate-links', candidateLinkRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

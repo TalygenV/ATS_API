@@ -144,3 +144,44 @@ CREATE TABLE IF NOT EXISTS interview_assignments (
   FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Create interviewer_time_slots table for interviewer availability
+CREATE TABLE IF NOT EXISTS interviewer_time_slots (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  interviewer_id VARCHAR(36) NOT NULL,
+  start_time DATETIME NOT NULL,
+  end_time DATETIME NOT NULL,
+  is_booked TINYINT(1) DEFAULT 0,
+  evaluation_id BIGINT NULL,
+  job_description_id BIGINT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_interviewer_id (interviewer_id),
+  INDEX idx_start_time (start_time),
+  INDEX idx_end_time (end_time),
+  INDEX idx_is_booked (is_booked),
+  INDEX idx_job_description_id (job_description_id),
+  FOREIGN KEY (interviewer_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (evaluation_id) REFERENCES candidate_evaluations(id) ON DELETE SET NULL,
+  FOREIGN KEY (job_description_id) REFERENCES job_descriptions(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Create candidate_links table for public candidate Q&A links
+CREATE TABLE IF NOT EXISTS candidate_links (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  token VARCHAR(64) NOT NULL UNIQUE,
+  job_description_id BIGINT NOT NULL,
+  candidate_name VARCHAR(255),
+  candidate_email VARCHAR(255),
+  status ENUM('pending', 'completed', 'expired') DEFAULT 'pending',
+  evaluation_id BIGINT NULL,
+  questions JSON NULL,
+  expires_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_token (token),
+  INDEX idx_job_description_id (job_description_id),
+  INDEX idx_status (status),
+  FOREIGN KEY (job_description_id) REFERENCES job_descriptions(id) ON DELETE CASCADE,
+  FOREIGN KEY (evaluation_id) REFERENCES candidate_evaluations(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
