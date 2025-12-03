@@ -1,6 +1,7 @@
 const express = require('express');
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
+const { generateQuestionsFromJD } = require('../utils/questionGenerator');
 
 const router = express.Router();
 
@@ -237,6 +238,37 @@ router.delete('/:id', authenticate, requireWriteAccess, async (req, res) => {
     console.error('Error deleting job description:', error);
     res.status(500).json({
       error: 'Failed to delete job description',
+      message: error.message
+    });
+  }
+});
+
+router.post('/generate-questions',  async (req, res) => {
+  try {
+    const { jobDescription, title, seniority, yearsOfExperience } = req.body;
+
+    if (!jobDescription || typeof jobDescription !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'jobDescription (string) is required in request body'
+      });
+    }
+
+    const questions = await generateQuestionsFromJD(jobDescription, {
+      title,
+      seniority,
+      yearsOfExperience
+    });
+
+    res.json({
+      success: true,
+      data: questions
+    });
+  } catch (error) {
+    console.error('Error generating questions from job description:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate questions from job description',
       message: error.message
     });
   }

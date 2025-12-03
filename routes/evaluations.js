@@ -1,7 +1,12 @@
 const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs').promises;
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess, authorize } = require('../middleware/auth');
 const { sendInterviewFeedbackToHR } = require('../utils/emailService');
+const { extractTextFromFile, parseResumeWithGemini } = require('../utils/resumeParser');
+const { matchResumeWithJobDescriptionAndQA } = require('../utils/resumeMatcher');
 
 const router = express.Router();
 
@@ -20,6 +25,73 @@ const safeParseJSON = (value, defaultValue = null) => {
   }
   // Already an object/array
   return value;
+};
+
+// Configure multer for file uploads
+const getUploadDir = () => {
+  // Check if running on Netlify (serverless environment)
+  if (process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL) {
+    return '/tmp';
+  }
+  return path.join(__dirname, '../uploads/resumes');
+};
+
+const storage = multer.diskStorage({
+  destination: async (req, file, cb) => {
+    const uploadDir = getUploadDir();
+    try {
+      await fs.mkdir(uploadDir, { recursive: true });
+      cb(null, uploadDir);
+    } catch (error) {
+      cb(error, null);
+    }
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const originalExt = path.extname(file.originalname);
+    cb(null, `eval_${uniqueSuffix}${originalExt}`);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, and TXT files are allowed.'));
+    }
+  }
+});
+
+// Error handler for multer
+const handleMulterError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        error: 'File too large. Maximum file size is 10MB.'
+      });
+    }
+    return res.status(400).json({
+      success: false,
+      error: err.message || 'File upload error'
+    });
+  }
+  if (err) {
+    return res.status(400).json({
+      success: false,
+      error: err.message || 'Upload error'
+    });
+  }
+  next();
 };
 
 // Get all evaluations (all authenticated users can view, with visibility rules)
@@ -107,6 +179,145 @@ router.get('/', authenticate, async (req, res) => {
     console.error('Error fetching evaluations:', error);
     res.status(500).json({
       error: 'Failed to fetch evaluations',
+      message: error.message
+    });
+  }
+});
+
+router.post('/evaluate-with-qa',  upload.single('resume'), handleMulterError, async (req, res) => {
+  const startTime = Date.now();
+  console.log('\n========== EVALUATION WITH Q&A STARTED ==========');
+  console.log(`Timestamp: ${new Date().toISOString()}`);
+  //console.log(`User: ${req.user.email} (${req.user.role})`);
+  
+  let filePath = null;
+  
+  try {
+    // Validate required fields
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'Resume file is required'
+      });
+    }
+
+    const { job_description, question_answers } = req.body;
+
+    if (!job_description) {
+      // Clean up file on error
+      if (req.file) {
+        try {
+          await fs.unlink(req.file.path);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }
+      return res.status(400).json({
+        success: false,
+        error: 'Job description is required'
+      });
+    }
+
+    // Parse question_answers JSON if provided
+    let questionAnswers = {};
+    if (question_answers) {
+      try {
+        questionAnswers = typeof question_answers === 'string' 
+          ? JSON.parse(question_answers) 
+          : question_answers;
+      } catch (parseError) {
+        console.error('Error parsing question_answers:', parseError);
+        // Clean up file on error
+        if (req.file) {
+          try {
+            await fs.unlink(req.file.path);
+          } catch (e) {
+            // Ignore cleanup errors
+          }
+        }
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid question_answers JSON format'
+        });
+      }
+    }
+
+    filePath = req.file.path;
+    const fileName = req.file.originalname;
+    const mimetype = req.file.mimetype;
+
+    console.log(`📄 Processing resume: ${fileName}`);
+    console.log(`📝 Job description length: ${job_description.length} characters`);
+    console.log(`❓ Q&A responses: ${Object.keys(questionAnswers).length} questions`);
+
+    // Extract text from file
+    console.log(`   📄 Extracting text from file...`);
+    const resumeText = await extractTextFromFile(filePath, mimetype);
+    console.log(`   ✅ Text extracted (${resumeText.length} characters)`);
+
+    // Parse resume with Gemini
+    console.log(`   🤖 Parsing resume with Gemini AI...`);
+    const parsedData = await parseResumeWithGemini(resumeText, fileName);
+    console.log(`   ✅ Resume parsed - Name: ${parsedData.name || 'N/A'}, Email: ${parsedData.email || 'N/A'}`);
+
+    // Match resume with job description and Q&A
+    console.log(`   🎯 Matching resume with job description and Q&A...`);
+    const matchResults = await matchResumeWithJobDescriptionAndQA(
+      resumeText,
+      job_description,
+      parsedData,
+      questionAnswers
+    );
+
+    console.log(`   📊 Match scores - Overall: ${matchResults.overall_match}%, Skills: ${matchResults.skills_match}%, Experience: ${matchResults.experience_match}%, Education: ${matchResults.education_match}%`);
+
+    // Clean up uploaded file
+    try {
+      await fs.unlink(filePath);
+      console.log(`   🗑️  Cleaned up temporary file: ${filePath}`);
+    } catch (cleanupError) {
+      console.warn(`   ⚠️  Could not clean up file: ${cleanupError.message}`);
+    }
+
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`✅ SUCCESS - Evaluation completed in ${totalTime}s`);
+    console.log(`==========================================\n`);
+
+    // Return the same format as matchResumeWithJobDescription
+    res.json({
+      success: true,
+      data: {
+        overall_match: matchResults.overall_match,
+        skills_match: matchResults.skills_match,
+        skills_details: matchResults.skills_details,
+        experience_match: matchResults.experience_match,
+        experience_details: matchResults.experience_details,
+        education_match: matchResults.education_match,
+        education_details: matchResults.education_details,
+        status: matchResults.status,
+        rejection_reason: matchResults.rejection_reason || null
+      }
+    });
+  } catch (error) {
+    // Clean up file on error
+    if (filePath) {
+      try {
+        await fs.unlink(filePath);
+        console.log(`🗑️  Cleaned up file on error: ${filePath}`);
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
+
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.error(`\n❌ EVALUATION FAILED after ${totalTime}s`);
+    console.error('Error:', error.message);
+    console.error('Stack:', error.stack);
+    console.log(`==========================================\n`);
+    
+    res.status(500).json({
+      success: false,
+      error: 'Failed to evaluate resume',
       message: error.message
     });
   }
