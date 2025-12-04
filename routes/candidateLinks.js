@@ -55,6 +55,7 @@ const upload = multer({
 });
 
 // HR/Admin creates a candidate link for a job description
+// Now returns existing link if one exists for the job post (one link per job post)
 router.post('/generate', async (req, res) => {
   try {
     const { job_description_id, candidate_name, candidate_email, expires_in_days } = req.body;
@@ -78,6 +79,44 @@ router.post('/generate', async (req, res) => {
       });
     }
 
+    // Check if a link already exists for this job post (one link per job post)
+    const existingLink = await queryOne(
+      'SELECT * FROM candidate_links WHERE job_description_id = ? AND status != "expired" ORDER BY created_at DESC LIMIT 1',
+      [job_description_id]
+    );
+
+    if (existingLink) {
+      // Return existing link
+      const frontendBaseUrl = process.env.FRONTEND_BASE_URL || process.env.APP_BASE_URL || '';
+      const candidateUrl = frontendBaseUrl
+        ? `${frontendBaseUrl.replace(/\/$/, '')}/candidate/${existingLink.token}`
+        : `/candidate/${existingLink.token}`;
+
+      let questions = [];
+      if (existingLink.questions) {
+        try {
+          const parsed = JSON.parse(existingLink.questions);
+          if (Array.isArray(parsed)) {
+            questions = parsed;
+          }
+        } catch (e) {
+          console.error('Error parsing existing link questions:', e);
+        }
+      }
+
+      return res.json({
+        success: true,
+        message: 'Existing candidate link retrieved',
+        data: {
+          id: existingLink.id,
+          token: existingLink.token,
+          url: candidateUrl,
+          questions: questions
+        }
+      });
+    }
+
+    // No existing link found, create a new one
     const fullJobDescription = `${job.title}\n\n${job.description}\n\n${job.requirements || ''}`;
 
     // Generate questions using existing utility
@@ -191,6 +230,89 @@ router.post('/generate', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to generate candidate link',
+      message: error.message
+    });
+  }
+});
+
+// Get link by job_description_id (for HR/Admin to view existing link)
+router.get('/job/:job_description_id', async (req, res) => {
+  try {
+    const { job_description_id } = req.params;
+
+    const link = await queryOne(
+      `SELECT cl.*, 
+        JSON_OBJECT('id', jd.id, 'title', jd.title, 'description', jd.description, 'requirements', jd.requirements) as job
+       FROM candidate_links cl
+       LEFT JOIN job_descriptions jd ON cl.job_description_id = jd.id
+       WHERE cl.job_description_id = ? AND cl.status != 'expired'
+       ORDER BY cl.created_at DESC LIMIT 1`,
+      [job_description_id]
+    );
+
+    if (!link) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No active link found for this job post'
+      });
+    }
+
+    // Check if link has expired
+    if (link.expires_at && new Date(link.expires_at) < new Date()) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'Link has expired'
+      });
+    }
+
+    let questions = [];
+    if (link.questions) {
+      try {
+        const parsed = JSON.parse(link.questions);
+        if (Array.isArray(parsed)) {
+          questions = parsed;
+        } else if (parsed && Array.isArray(parsed.categories)) {
+          parsed.categories.forEach(cat => {
+            if (cat && Array.isArray(cat.questions)) {
+              cat.questions.forEach(q => {
+                const text = q?.text || q?.question || null;
+                if (text && typeof text === 'string') {
+                  questions.push(text.trim());
+                }
+              });
+            }
+          });
+        }
+      } catch (e) {
+        console.error('Error parsing stored questions JSON:', e);
+        questions = [];
+      }
+    }
+
+    const job = link.job ? JSON.parse(link.job) : null;
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL || process.env.APP_BASE_URL || '';
+    const candidateUrl = frontendBaseUrl
+      ? `${frontendBaseUrl.replace(/\/$/, '')}/candidate/${link.token}`
+      : `/candidate/${link.token}`;
+
+    res.json({
+      success: true,
+      data: {
+        id: link.id,
+        token: link.token,
+        url: candidateUrl,
+        status: link.status,
+        job,
+        questions
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching candidate link by job ID:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch candidate link',
       message: error.message
     });
   }
@@ -312,10 +434,11 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
       });
     }
 
-    if (link.status !== 'pending') {
-      return res.status(400).json({
+    // Allow link to be reused - only check for expired status
+    if (link.status === 'expired') {
+      return res.status(410).json({
         success: false,
-        error: 'This link has already been used or expired'
+        error: 'This link has expired'
       });
     }
 
@@ -424,11 +547,8 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
 
     const evaluationId = evalResult.insertId;
 
-    // Update link
-    await query(
-      'UPDATE candidate_links SET status = "completed", evaluation_id = ? WHERE id = ?',
-      [evaluationId, link.id]
-    );
+    // Don't update link status - keep it reusable for multiple candidates
+    // Link remains active so multiple candidates can use the same link
 
     // If score > 70, fetch available interviewer slots for mapped interviewers
     let availableSlots = [];
@@ -524,10 +644,18 @@ router.post('/:token/book-slot', async (req, res) => {
       [token]
     );
 
-    if (!link || link.status !== 'completed' || link.evaluation_id !== Number(evaluation_id)) {
+    if (!link || link.status === 'expired') {
       return res.status(400).json({
         success: false,
-        error: 'Invalid link or evaluation'
+        error: 'Invalid or expired link'
+      });
+    }
+
+    // Check if link has expired
+    if (link.expires_at && new Date(link.expires_at) < new Date()) {
+      return res.status(410).json({
+        success: false,
+        error: 'This link has expired'
       });
     }
 
@@ -540,14 +668,14 @@ router.post('/:token/book-slot', async (req, res) => {
        FROM candidate_evaluations ce
        LEFT JOIN job_descriptions jd ON ce.job_description_id = jd.id
        LEFT JOIN resumes r ON ce.resume_id = r.id
-       WHERE ce.id = ?`,
-      [evaluation_id]
+       WHERE ce.id = ? AND ce.job_description_id = ?`,
+      [evaluation_id, link.job_description_id]
     );
 
     if (!evaluation) {
       return res.status(404).json({
         success: false,
-        error: 'Evaluation not found'
+        error: 'Evaluation not found or does not belong to this job post'
       });
     }
 
