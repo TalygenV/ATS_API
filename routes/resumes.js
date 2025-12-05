@@ -210,6 +210,99 @@ router.get('/:id/download', authenticate, async (req, res) => {
   }
 });
 
+// Get version history for a resume (all authenticated users can view)
+// Accepts any resume ID (original or version) and returns all versions
+router.get('/:id/versions', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // First, get the resume to find the original
+    const resume = await queryOne(
+      'SELECT id, parent_id, email, name FROM resumes WHERE id = ?',
+      [id]
+    );
+
+    if (!resume) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Resume not found' 
+      });
+    }
+
+    // Find the original resume ID
+    // If this resume has a parent_id, use that; otherwise, this is the original
+    const originalResumeId = resume.parent_id || resume.id;
+
+    // Get all versions of this resume (original + all versions)
+    // Order by version_number DESC (latest first), then by created_at DESC as fallback
+    const versions = await query(
+      `SELECT id, file_name, file_path, name, email, phone, location,
+              skills, experience, education, summary, certifications,
+              raw_text, total_experience, parent_id, version_number,
+              created_at, updated_at
+       FROM resumes 
+       WHERE id = ? OR parent_id = ?
+       ORDER BY version_number DESC, created_at DESC`,
+      [originalResumeId, originalResumeId]
+    );
+
+    // Parse JSON fields for each version
+    const parsedVersions = versions.map(version => ({
+      id: version.id,
+      file_name: version.file_name,
+      file_path: version.file_path,
+      name: version.name,
+      email: version.email,
+      phone: version.phone,
+      location: version.location,
+      skills: safeParseJSON(version.skills, []),
+      experience: safeParseJSON(version.experience, []),
+      education: safeParseJSON(version.education, []),
+      summary: version.summary,
+      certifications: safeParseJSON(version.certifications, []),
+      raw_text: version.raw_text,
+      total_experience: version.total_experience,
+      parent_id: version.parent_id,
+      version_number: version.version_number || 1,
+      created_at: version.created_at,
+      updated_at: version.updated_at,
+      // Format the parsed data for display
+      parsed_data: {
+        name: version.name,
+        email: version.email,
+        phone: version.phone,
+        location: version.location,
+        skills: safeParseJSON(version.skills, []),
+        experience: safeParseJSON(version.experience, []),
+        education: safeParseJSON(version.education, []),
+        summary: version.summary,
+        certifications: safeParseJSON(version.certifications, []),
+        total_experience: version.total_experience
+      }
+    }));
+
+    res.json({
+      success: true,
+      original_resume_id: originalResumeId,
+      total_versions: parsedVersions.length,
+      data: parsedVersions.map(v => ({
+        version: v.version_number,
+        uploaded_on: v.created_at,
+        resume_id: v.id,
+        file_name: v.file_name,
+        results: v.parsed_data
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching resume versions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch resume versions',
+      message: error.message
+    });
+  }
+});
+
 // Delete resume (only HR and Admin can delete)
 router.delete('/:id', authenticate, requireWriteAccess, async (req, res) => {
   try {

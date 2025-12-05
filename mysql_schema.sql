@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS resumes (
   raw_text TEXT,
   total_experience DECIMAL(5,2),
   parent_id BIGINT NULL,
+  version_number INT DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_name (name),
@@ -41,6 +42,7 @@ CREATE TABLE IF NOT EXISTS resumes (
   INDEX idx_location (location),
   INDEX idx_created_at (created_at DESC),
   INDEX idx_parent_id (parent_id),
+  INDEX idx_version_number (version_number),
   INDEX idx_total_experience (total_experience),
   FOREIGN KEY (parent_id) REFERENCES resumes(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -8,8 +8,20 @@ const genAI = require('../config/gemini');
  * @returns {Promise<object>} Match scores and details
  */
 async function matchResumeWithJobDescription(resumeText, jobDescription, parsedResumeData) {
-  // List of models to try in order (using available models)
-  const modelsToTry = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
+  // List of models to try in order (prioritized by capability and availability)
+  // When quota is exceeded (429), automatically switches to next model
+  const modelsToTry = [
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-live',
+    'gemma-3-27b',
+    'gemma-3-12b',
+    'gemma-3-4b',
+    'gemma-3-2b',
+    'gemma-3-1b'
+  ];
   
   const prompt = `You are an expert HR recruiter evaluating a candidate's resume against a job description. Analyze the resume and job description, then provide a comprehensive matching score and detailed analysis.
 
@@ -147,6 +159,21 @@ IMPORTANT INSTRUCTIONS:
     } catch (error) {
       lastError = error;
       const errorMsg = error.message || 'Unknown error';
+      const errorString = JSON.stringify(error) || '';
+      
+      // Check for quota exceeded errors (429) - this is the main case we need to handle
+      const isQuotaError = 
+        errorMsg.includes('429') || 
+        errorMsg.includes('quota') || 
+        errorMsg.includes('Quota exceeded') ||
+        errorMsg.includes('exceeded your current quota') ||
+        errorString.includes('429') ||
+        errorString.includes('quota');
+      
+      if (isQuotaError) {
+        console.log(`   ⚠️  Quota exceeded for ${modelName}, switching to next model...`);
+        continue;
+      }
       
       // If it's a 404 (model not found), try the next model
       if (errorMsg.includes('404') || errorMsg.includes('not found')) {
@@ -160,8 +187,8 @@ IMPORTANT INSTRUCTIONS:
         continue;
       }
       
-      // For API errors (401, 403, etc.), log and try next model
-      if (errorMsg.includes('401') || errorMsg.includes('403') || errorMsg.includes('429')) {
+      // For other API errors (401, 403, etc.), log and try next model
+      if (errorMsg.includes('401') || errorMsg.includes('403')) {
         console.log(`   ⚠️  API error with ${modelName}: ${errorMsg}, trying next model...`);
         continue;
       }
@@ -238,8 +265,20 @@ function validateAndNormalizeMatchData(matchData) {
  * @returns {Promise<object>} Match scores and details
  */
 async function matchResumeWithJobDescriptionAndQA(resumeText, jobDescription, parsedResumeData, questionAnswers = {}) {
-  // List of models to try in order (using available models)
-  const modelsToTry = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
+  // List of models to try in order (prioritized by capability and availability)
+  // When quota is exceeded (429), automatically switches to next model
+  const modelsToTry = [
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-live',
+    'gemma-3-27b',
+    'gemma-3-12b',
+    'gemma-3-4b',
+    'gemma-3-2b',
+    'gemma-3-1b'
+  ];
   
   // Format Q&A for the prompt
   let qaSection = '';
@@ -386,6 +425,21 @@ IMPORTANT INSTRUCTIONS:
     } catch (error) {
       lastError = error;
       const errorMsg = error.message || 'Unknown error';
+      const errorString = JSON.stringify(error) || '';
+      
+      // Check for quota exceeded errors (429) - this is the main case we need to handle
+      const isQuotaError = 
+        errorMsg.includes('429') || 
+        errorMsg.includes('quota') || 
+        errorMsg.includes('Quota exceeded') ||
+        errorMsg.includes('exceeded your current quota') ||
+        errorString.includes('429') ||
+        errorString.includes('quota');
+      
+      if (isQuotaError) {
+        console.log(`   ⚠️  Quota exceeded for ${modelName}, switching to next model...`);
+        continue;
+      }
       
       // If it's a 404 (model not found), try the next model
       if (errorMsg.includes('404') || errorMsg.includes('not found')) {
@@ -399,8 +453,8 @@ IMPORTANT INSTRUCTIONS:
         continue;
       }
       
-      // For API errors (401, 403, etc.), log and try next model
-      if (errorMsg.includes('401') || errorMsg.includes('403') || errorMsg.includes('429')) {
+      // For other API errors (401, 403, etc.), log and try next model
+      if (errorMsg.includes('401') || errorMsg.includes('403')) {
         console.log(`   ⚠️  API error with ${modelName}: ${errorMsg}, trying next model...`);
         continue;
       }

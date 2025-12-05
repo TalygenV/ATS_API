@@ -38,7 +38,20 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
  * @returns {Promise<object>} Object with categories and questions
  */
 async function generateQuestionsFromJD(jobDescription, options = {}) {
-  const modelsToTry = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
+  // List of models to try in order (prioritized by capability and availability)
+  // When quota is exceeded (429), automatically switches to next model
+  const modelsToTry = [
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-live',
+    'gemma-3-27b',
+    'gemma-3-12b',
+    'gemma-3-4b',
+    'gemma-3-2b',
+    'gemma-3-1b'
+  ];
 
   const { title, seniority, yearsOfExperience } = options;
 
@@ -164,6 +177,21 @@ async function generateQuestionsFromJD(jobDescription, options = {}) {
     } catch (error) {
       lastError = error;
       const errorMsg = error.message || 'Unknown error';
+      const errorString = JSON.stringify(error) || '';
+      
+      // Check for quota exceeded errors (429) - this is the main case we need to handle
+      const isQuotaError = 
+        errorMsg.includes('429') || 
+        errorMsg.includes('quota') || 
+        errorMsg.includes('Quota exceeded') ||
+        errorMsg.includes('exceeded your current quota') ||
+        errorString.includes('429') ||
+        errorString.includes('quota');
+      
+      if (isQuotaError) {
+        console.log(`   ⚠️  Quota exceeded for ${modelName}, switching to next model...`);
+        continue;
+      }
 
       if (
         errorMsg.includes('404') ||
@@ -189,8 +217,7 @@ async function generateQuestionsFromJD(jobDescription, options = {}) {
 
       if (
         errorMsg.includes('401') ||
-        errorMsg.includes('403') ||
-        errorMsg.includes('429')
+        errorMsg.includes('403')
       ) {
         console.log(
           `   ⚠️  API error with ${modelName} for question generation: ${errorMsg}, trying next model...`

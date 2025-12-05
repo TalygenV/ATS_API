@@ -7,6 +7,8 @@ const { query, queryOne } = require('../config/database');
 const { generateQuestionsFromJD } = require('../utils/questionGenerator');
 const { extractTextFromFile, parseResumeWithGemini } = require('../utils/resumeParser');
 const { matchResumeWithJobDescriptionAndQA } = require('../utils/resumeMatcher');
+const { hasRecentApplication } = require('../utils/applicationValidator');
+const { findOriginalResume, getNextVersionNumber } = require('../utils/duplicateChecker');
 const { sendEmail, sendInterviewAssignmentToInterviewer, sendInterviewAssignmentToCandidate } = require('../utils/emailService');
 
 const router = express.Router();
@@ -481,15 +483,45 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
     const parsedData = await parseResumeWithGemini(resumeText, fileName);
 
     const normalizedEmail = parsedData.email ? parsedData.email.toLowerCase().trim() : (link.candidate_email || null);
+    
+    // Check if candidate has applied within the last 6 months
+    if (normalizedEmail) {
+      const hasRecent = await hasRecentApplication(normalizedEmail);
+      if (hasRecent) {
+        // Clean up file before returning error
+        try {
+          await fs.unlink(filePath);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+        return res.status(400).json({
+          success: false,
+          error: 'This candidate has already applied within the last 6 months'
+        });
+      }
+    }
+
+    // Check for duplicate resume and get versioning info
+    const originalResumeId = await findOriginalResume(parsedData);
+    let parentId = null;
+    let versionNumber = 1;
+
+    if (originalResumeId) {
+      // This is a duplicate - create a new version
+      parentId = originalResumeId;
+      versionNumber = await getNextVersionNumber(originalResumeId);
+      console.log(`📝 Duplicate detected! Creating version ${versionNumber} for candidate (Original ID: ${originalResumeId})`);
+    }
+
     const fullJobDescription = `${job.title}\n\n${job.description}\n\n${job.requirements || ''}`;
 
-    // Save resume
+    // Save resume with version number
     const resumeResult = await query(
       `INSERT INTO resumes (
         file_name, file_path, name, email, phone, location,
         skills, experience, education, summary, certifications,
-        raw_text, total_experience, parent_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        raw_text, total_experience, parent_id, version_number
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         fileName,
         filePath,
@@ -504,7 +536,8 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
         JSON.stringify(parsedData.certifications || []),
         resumeText,
         parsedData.total_experience ? parseFloat(parsedData.total_experience) : null,
-        null
+        parentId,
+        versionNumber
       ]
     );
 

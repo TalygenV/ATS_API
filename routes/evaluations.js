@@ -710,7 +710,10 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
           'phone', r.phone,
           'file_name', r.file_name,
           'location', r.location,
-          'total_experience', r.total_experience
+          'total_experience', r.total_experience,
+          'parent_id', r.parent_id,
+          'version_number', r.version_number,
+          'created_at', r.created_at
         ) as resume,
         JSON_OBJECT(
           'id', u.id,
@@ -773,15 +776,12 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
       return parsed;
     });
 
-    // Detect and mark duplicates
-    // Group by email (if available) or by name
-    const duplicateGroups = new Map();
-    const seenKeys = new Set();
-
-    // First pass: group evaluations by email/name
+    // Process evaluations with version information
+    // Group by email/name to find all versions and select the latest one
+    const versionGroups = new Map();
+    
+    // First pass: group evaluations by email/name to find all versions
     for (const eval of parsedEvaluations) {
-      // Create a unique key for grouping duplicates
-      // Use email if available, otherwise use name
       const email = eval.email?.toLowerCase().trim() || eval.resume?.email?.toLowerCase().trim();
       const name = eval.candidate_name?.toLowerCase().trim() || eval.resume?.name?.toLowerCase().trim();
       
@@ -793,16 +793,16 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
       }
 
       if (groupKey) {
-        if (!duplicateGroups.has(groupKey)) {
-          duplicateGroups.set(groupKey, []);
+        if (!versionGroups.has(groupKey)) {
+          versionGroups.set(groupKey, []);
         }
-        duplicateGroups.get(groupKey).push(eval);
+        versionGroups.get(groupKey).push(eval);
       }
     }
 
-    // Second pass: process evaluations in original order, mark duplicates
+    // Second pass: for each group, find the latest version and only include that one
     const processedEvaluations = [];
-    const processedIds = new Set();
+    const processedKeys = new Set();
     
     for (const eval of parsedEvaluations) {
       const email = eval.email?.toLowerCase().trim() || eval.resume?.email?.toLowerCase().trim();
@@ -815,42 +815,66 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
         groupKey = `name:${name}`;
       }
 
-      if (groupKey) {
-        const group = duplicateGroups.get(groupKey);
+      if (groupKey && !processedKeys.has(groupKey)) {
+        const group = versionGroups.get(groupKey);
+        
         if (group && group.length > 1) {
-          // Check if this is the first occurrence in the group (maintains sort order)
-          const firstInGroup = group[0];
-          if (firstInGroup.id === eval.id && !processedIds.has(eval.id)) {
-            // First occurrence - mark as duplicate
-            processedEvaluations.push({
-              ...eval,
-              isDuplicate: true,
-              duplicateCount: group.length - 1
-            });
-            processedIds.add(eval.id);
-          }
-          // Skip other occurrences (duplicates) - they're already handled
-        } else {
-          // Only one in group - not a duplicate
-          if (!processedIds.has(eval.id)) {
-            processedEvaluations.push({
-              ...eval,
-              isDuplicate: false,
-              duplicateCount: 0
-            });
-            processedIds.add(eval.id);
-          }
-        }
-      } else {
-        // No email or name, treat as unique
-        if (!processedIds.has(eval.id)) {
+          // Multiple versions exist - find the latest one
+          // Sort by resume version_number DESC, then by resume created_at DESC
+          const sortedGroup = [...group].sort((a, b) => {
+            const versionA = a.resume?.version_number || 1;
+            const versionB = b.resume?.version_number || 1;
+            if (versionB !== versionA) {
+              return versionB - versionA; // Higher version first
+            }
+            // If versions are equal, sort by resume created_at DESC
+            const resumeDateA = new Date(a.resume?.created_at || a.created_at || 0);
+            const resumeDateB = new Date(b.resume?.created_at || b.created_at || 0);
+            return resumeDateB - resumeDateA;
+          });
+          
+          const latestEval = sortedGroup[0];
+          const versionNumber = latestEval.resume?.version_number || 1;
+          const parentId = latestEval.resume?.parent_id;
+          const isVersion = !!parentId;
+          const totalVersions = group.length;
+
+          processedEvaluations.push({
+            ...latestEval,
+            isDuplicate: true,
+            isVersion: isVersion,
+            versionNumber: versionNumber,
+            parentId: parentId,
+            totalVersions: totalVersions,
+            duplicateCount: totalVersions - 1
+          });
+        } else if (group && group.length === 1) {
+          // Only one version
+          const eval = group[0];
           processedEvaluations.push({
             ...eval,
             isDuplicate: false,
+            isVersion: false,
+            versionNumber: eval.resume?.version_number || 1,
+            parentId: eval.resume?.parent_id || null,
+            totalVersions: 1,
             duplicateCount: 0
           });
-          processedIds.add(eval.id);
         }
+        
+        processedKeys.add(groupKey);
+      } else if (!groupKey && !processedKeys.has(`unique_${eval.id}`)) {
+        // No email or name, treat as unique
+        processedEvaluations.push({
+          ...eval,
+          isDuplicate: false,
+          isVersion: false,
+          versionNumber: eval.resume?.version_number || 1,
+          parentId: eval.resume?.parent_id || null,
+          totalVersions: 1,
+          duplicateCount: 0
+        });
+        processedKeys.add(`unique_${eval.id}`);
       }
     }
 

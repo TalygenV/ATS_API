@@ -6,8 +6,9 @@ const fsPromises = require('fs').promises;
 const FormData = require('form-data');
 const axios = require('axios');
 const { extractTextFromFile, parseResumeWithGemini } = require('../utils/resumeParser');
-const { findDuplicateResume } = require('../utils/duplicateChecker');
+const { findOriginalResume, getNextVersionNumber } = require('../utils/duplicateChecker');
 const { matchResumeWithJobDescription } = require('../utils/resumeMatcher');
+const { hasRecentApplication } = require('../utils/applicationValidator');
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
 
@@ -258,23 +259,48 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
     // Parse resume with Gemini
     const parsedData = await parseResumeWithGemini(resumeText, fileName);
 
-    // Check for duplicate resume
-    const parentId = await findDuplicateResume(parsedData);
-
     // Normalize email to lowercase for consistency
     const normalizedEmail = parsedData.email ? parsedData.email.toLowerCase().trim() : null;
+
+    // Check for duplicate resume and get versioning info
+    const originalResumeId = await findOriginalResume(parsedData);
+    let parentId = null;
+    let versionNumber = 1;
+
+    if (originalResumeId) {
+      // This is a duplicate - create a new version
+      parentId = originalResumeId;
+      versionNumber = await getNextVersionNumber(originalResumeId);
+      console.log(`📝 Duplicate detected! Creating version ${versionNumber} for candidate (Original ID: ${originalResumeId})`);
+    }
+
+    // Check if candidate has applied within the last 6 months
+    if (normalizedEmail) {
+      const hasRecent = await hasRecentApplication(normalizedEmail);
+      if (hasRecent) {
+        // Clean up file before returning error
+        try {
+          await fsPromises.unlink(req.file.path);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+        return res.status(400).json({
+          error: 'This candidate has already applied within the last 6 months'
+        });
+      }
+    }
 
     // Ensure we preserve the original filename with extension for download
     const originalFileName = fileName;
 
     console.log(`💾 Saving resume to database...`);
-    // Save to MySQL with file path
+    // Save to MySQL with file path and version number
     const result = await query(
       `INSERT INTO resumes (
         file_name, file_path, name, email, phone, location, 
         skills, experience, education, summary, certifications, 
-        raw_text, total_experience, parent_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        raw_text, total_experience, parent_id, version_number
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         originalFileName,
         filePath,
@@ -289,7 +315,8 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
         JSON.stringify(parsedData.certifications || []),
         resumeText,
         parsedData.total_experience ? parseFloat(parsedData.total_experience) : null,
-        parentId
+        parentId,
+        versionNumber
       ]
     );
 
@@ -374,10 +401,15 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
 
     res.json({
       success: true,
-      message: parentId ? 'Resume parsed and saved successfully (duplicate detected)' : 'Resume parsed and saved successfully',
-      data: parsedResume,
+      message: parentId ? `Resume parsed and saved successfully (Version ${versionNumber} created)` : 'Resume parsed and saved successfully',
+      data: {
+        ...parsedResume,
+        version_number: versionNumber,
+        parent_id: parentId
+      },
       isDuplicate: !!parentId,
       parentId: parentId,
+      versionNumber: versionNumber,
       evaluation: evaluationData,
       matchScores: {
         overall_match: matchResults.overall_match,
@@ -504,29 +536,54 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
         const parsedData = await parseResumeWithGemini(resumeText, fileName);
         console.log(`   ✅ Resume parsed - Name: ${parsedData.name || 'N/A'}, Email: ${parsedData.email || 'N/A'}`);
 
-        console.log(`   🔍 Checking for duplicates...`);
-        // Check for duplicate resume
-        const parentId = await findDuplicateResume(parsedData);
-        if (parentId) {
-          console.log(`   ⚠️  Duplicate detected! Parent ID: ${parentId}`);
-        } else {
-          console.log(`   ✅ No duplicate found`);
-        }
-
         // Normalize email to lowercase for consistency
         const normalizedEmail = parsedData.email ? parsedData.email.toLowerCase().trim() : null;
+
+        console.log(`   🔍 Checking for duplicates...`);
+        // Check for duplicate resume and get versioning info
+        const originalResumeId = await findOriginalResume(parsedData);
+        let parentId = null;
+        let versionNumber = 1;
+
+        if (originalResumeId) {
+          // This is a duplicate - create a new version
+          parentId = originalResumeId;
+          versionNumber = await getNextVersionNumber(originalResumeId);
+          console.log(`   ⚠️  Duplicate detected! Creating version ${versionNumber} for candidate (Original ID: ${originalResumeId})`);
+        } else {
+          console.log(`   ✅ No duplicate found - creating new candidate record`);
+        }
+
+        // Check if candidate has applied within the last 6 months
+        if (normalizedEmail) {
+          const hasRecent = await hasRecentApplication(normalizedEmail);
+          if (hasRecent) {
+            // Clean up file before skipping
+            try {
+              await fsPromises.unlink(file.path);
+            } catch (e) {
+              // Ignore cleanup errors
+            }
+            console.log(`   ⚠️  Skipping ${file.originalname}: Candidate has already applied within the last 6 months`);
+            errors.push({
+              fileName: file.originalname,
+              error: 'This candidate has already applied within the last 6 months'
+            });
+            continue; // Skip to next file
+          }
+        }
 
         // Ensure we preserve the original filename with extension
         const originalFileName = fileName;
 
         console.log(`   💾 Saving resume to database...`);
-        // Save to MySQL with file path
+        // Save to MySQL with file path and version number
         const result = await query(
           `INSERT INTO resumes (
             file_name, file_path, name, email, phone, location, 
             skills, experience, education, summary, certifications, 
-            raw_text, total_experience, parent_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            raw_text, total_experience, parent_id, version_number
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             originalFileName,
             filePath,
@@ -541,7 +598,8 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
             JSON.stringify(parsedData.certifications || []),
             resumeText,
             parsedData.total_experience ? parseFloat(parsedData.total_experience) : null,
-            parentId
+            parentId,
+            versionNumber
           ]
         );
 
@@ -623,9 +681,14 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
         results.push({
           fileName: fileName,
           success: true,
-          data: parsedResume,
+          data: {
+            ...parsedResume,
+            version_number: versionNumber,
+            parent_id: parentId
+          },
           isDuplicate: !!parentId,
           parentId: parentId,
+          versionNumber: versionNumber,
           evaluation: evaluationData,
           matchScores: {
             overall_match: matchResults.overall_match,
