@@ -57,7 +57,7 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
 async function parseResumeWithGemini(resumeText, fileName) {
   // List of models to try in order (using available models)
   // Note: gemini-2.0-flash might have network issues, so we try alternatives
-  const modelsToTry = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
+  const modelsToTry = ['gemini-2.5-flash-lite'];
   
   const prompt = `Parse the following resume and extract all relevant information. Return the data in a structured JSON format with the following fields:
 
