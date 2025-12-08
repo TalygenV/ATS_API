@@ -41,74 +41,75 @@ async function generateQuestionsFromJD(jobDescription, options = {}) {
   // List of models to try in order (prioritized by capability and availability)
   // When quota is exceeded (429), automatically switches to next model
   const modelsToTry = [
-    'gemini-2.5-pro',
-    'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-live',
-    'gemma-3-27b',
-    'gemma-3-12b',
-    'gemma-3-4b',
-    'gemma-3-2b',
-    'gemma-3-1b'
+    
+    'gemini-2.5-flash-lite'
+    
   ];
 
   const { title, seniority, yearsOfExperience } = options;
 
   const prompt = `
-  You are an expert technical interviewer.
-  
-  JOB CONTEXT:
-  - Job Title: ${title || 'Not specified'}
-  - Seniority: ${seniority || 'Not specified'}
-  - Expected Experience: ${yearsOfExperience || 'Not specified'}
-  
-  JOB DESCRIPTION:
-  ${jobDescription}
-  
-  TASK:
-  Generate clear, concise screening questions HR/interviewers can use to quickly assess the candidate.
-  
-  REQUIREMENTS:
-  1. Ask SHORT, DIRECT questions answerable in numbers or brief sentences.
-  2. Cover:
-     - Total overall experience
-     - Experience (in years) for each major technology/stack in the JD
-     - Database experience
-     - Cloud/DevOps tools if present
-     - Domain/industry experience
-  3. Use formats like:
-     - "Total experience in .NET Core (in years)"
-     - "Total overall professional experience (in years)"
-  4. don't categories the questions.
-  
-  OUTPUT FORMAT (JSON only):
-  {
-    "categories": [
-      {
-        "id": "overall_experience",
-        "label": "Overall Experience",
-        "questions": [
-          {
-            "id": "total_experience_years",
-            "text": "Total overall professional experience (in years)",
-            "type": "number",
-            "unit": "years"
-          }
-        ]
-      }
-    ]
-  }
-  
-  RULES:
-  - Use snake_case for all ids.
-  - Use human-readable category labels.
-  - For experience: type = number, unit = years.
-  - For yes/no: type = boolean.
-  - For text answers: type = text.
-  - Include at least:
-    - 1 overall experience question
-    - 5-7 technology/skill experience impactful questions from the JD.
+  You are an expert technical recruiter. Based on the JOB CONTEXT and JOB DESCRIPTION provided below, generate the MINIMUM number of objective screening questions required to verify whether the candidate is suitable for the role.
+
+JOB CONTEXT:
+- Job Title: ${title || 'Not specified'}
+- Seniority: ${seniority || 'Not specified'}
+- Expected Experience: ${yearsOfExperience || 'Not specified'}
+
+JOB DESCRIPTION:
+${jobDescription}
+
+🚨 STRICT RULES — MUST FOLLOW
+1. Every question MUST be answerable with ONLY one of these formats:
+   • Yes/No
+   • True/False
+   • Numeric value in years (0, 1, 3, 5…)
+2. No other answer type is allowed (NO text, NO tech name, NO multiple choice).
+3. Ask ONLY the minimum essential questions needed to filter candidates.
+4. Questions must be fully aligned with REQUIRED skills, responsibilities, certifications, or mandatory conditions in the job description.
+5. Do not repeat questions for the same competency even if mentioned multiple times.
+6. First category must ALWAYS be **Overall Experience** with the exact predefined question below.
+
+⚠️ OUTPUT MUST BE JSON ONLY — NO EXPLANATIONS.
+
+📌 JSON STRUCTURE (strict — must match exactly)
+{
+  "categories": [
+    {
+      "id": "overall_experience",
+      "label": "Overall Experience",
+      "questions": [
+        {
+          "id": "total_experience_years",
+          "text": "Total overall professional experience (in years)",
+          "type": "number",
+          "unit": "years"
+        }
+      ]
+    }
+  ]
+}
+
+🔧 ADDITIONAL RULES FOR NEW QUESTIONS:
+- For skill validation → type = "yes_no"
+- For mandatory compliance (shift, location, visa, etc.) → type = "yes_no" or "true_false"
+- For experience duration → type = "number" and include "unit": "years"
+- Max 5 categories in total
+- 1–3 questions per category only
+
+📌 FORMATTING REQUIREMENTS:
+- Every category must have:
+  - id (snake_case)
+  - label (readable name)
+  - questions (array)
+- Every question must have:
+  - id (snake_case)
+  - text (the question)
+  - type (yes_no | true_false | number)
+  - unit ONLY if type = number (value must be "years")
+
+Return ONLY the JSON — nothing else.
+
   `;
   
 

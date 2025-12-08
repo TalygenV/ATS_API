@@ -58,16 +58,13 @@ async function parseResumeWithGemini(resumeText, fileName) {
   // List of models to try in order (prioritized by capability and availability)
   // When quota is exceeded (429), automatically switches to next model
   const modelsToTry = [
-    'gemini-2.5-pro',
-    'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-live',
-    'gemma-3-27b',
-    'gemma-3-12b',
-    'gemma-3-4b',
-    'gemma-3-2b',
-    'gemma-3-1b'
+    'gemini-2.5-flash'
+    ,'gemini-2.5-flash-live'
+    ,'gemini-2.5-flash-native-audio-dialog'
+    ,'gemini-2.5-flash-tts'
+    ,'gemini-2.5-flash-lite'
+    ,'gemini-2.0-flash-live'
+    ,'gemini-2.0-flash'
   ];
   
   const prompt = `Parse the following resume and extract all relevant information. Return the data in a structured JSON format with the following fields:
