@@ -9,7 +9,7 @@ const genAI = require('../config/gemini');
  */
 async function matchResumeWithJobDescription(resumeText, jobDescription, parsedResumeData) {
   // List of models to try in order (using available models)
-  const modelsToTry = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
+  const modelsToTry = ['gemini-2.5-flash-lite'];
   
   const prompt = `You are an expert HR recruiter evaluating a candidate's resume against a job description. Analyze the resume and job description, then provide a comprehensive matching score and detailed analysis.
 
