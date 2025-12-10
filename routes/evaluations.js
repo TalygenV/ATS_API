@@ -734,20 +734,27 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
     }
 
     // Status filtering - check all status fields
-    if (status) {
-      if (status === 'selected') {
-        sql += ' AND (ce.interviewer_status = ? OR ce.hr_final_status = ?)';
-        params.push('selected', 'selected');
-      } else if (status === 'rejected') {
-        sql += ' AND (ce.interviewer_status = ? OR ce.hr_final_status = ?)';
-        params.push('rejected', 'rejected');
-      } else if (status === 'on_hold') {
-        sql += ' AND (ce.interviewer_status = ? OR ce.hr_final_status = ?)';
-        params.push('on_hold', 'on_hold');
-      } else {
-        sql += ' AND (ce.status = ? OR ce.interviewer_status = ? OR ce.hr_final_status = ?)';
-        params.push(status, status, status);
-      }
+    // if (status) {
+    //   if (status === 'selected') {
+    //     sql += ' AND (ce.interviewer_status = ? OR ce.hr_final_status = ?)';
+    //     params.push('selected', 'selected');
+    //   } else if (status === 'rejected') {
+    //     sql += ' AND (ce.interviewer_status = ? OR ce.hr_final_status = ?)';
+    //     params.push('rejected', 'rejected');
+    //   } else if (status === 'on_hold') {
+    //     sql += ' AND (ce.interviewer_status = ? OR ce.hr_final_status = ?)';
+    //     params.push('on_hold', 'on_hold');
+    //   } else {
+    //     sql += ' AND (ce.status = ? OR ce.interviewer_status = ? OR ce.hr_final_status = ?)';
+    //     params.push(status, status, status);
+    //   }
+    // }
+
+        if (status) {
+   
+        sql += ' AND (ce.status = ?)';
+        params.push(status );
+      
     }
 
     // Sort by overall_match by default, or by created_at

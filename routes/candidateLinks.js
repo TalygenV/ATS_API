@@ -418,7 +418,7 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
     const { token } = req.params;
 
     if (!req.file) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'Resume file is required'
       });
@@ -430,7 +430,7 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
     );
 
     if (!link) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
         error: 'Invalid or expired link'
       });
@@ -438,7 +438,7 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
 
     // Allow link to be reused - only check for expired status
     if (link.status === 'expired') {
-      return res.status(410).json({
+      return res.status(200).json({
         success: false,
         error: 'This link has expired'
       });
@@ -449,7 +449,7 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
         'UPDATE candidate_links SET status = "expired" WHERE id = ?',
         [link.id]
       );
-      return res.status(410).json({
+      return res.status(200).json({
         success: false,
         error: 'This link has expired'
       });
@@ -461,7 +461,7 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
     );
 
     if (!job) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
         error: 'Job description not found'
       });
@@ -494,7 +494,7 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
         } catch (e) {
           // Ignore cleanup errors
         }
-        return res.status(400).json({
+        return res.status(200).json({
           success: false,
           error: 'This candidate has already applied within the last 6 months'
         });
