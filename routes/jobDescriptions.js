@@ -8,15 +8,46 @@ const router = express.Router();
 // Get all job descriptions (all authenticated users can view)
 router.get('/', authenticate, async (req, res) => {
   try {
-    const jobDescriptions = await query(
-      `SELECT 
-        jd.*,
-        COUNT(DISTINCT ce.resume_id) as resume_count
-      FROM job_descriptions jd
-      LEFT JOIN candidate_evaluations ce ON jd.id = ce.job_description_id
-      GROUP BY jd.id
-      ORDER BY jd.created_at DESC`
+    // const jobDescriptions = await query(
+    //   `SELECT 
+    //     jd.*,
+    //     COUNT(DISTINCT ce.resume_id) as resume_count
+    //   FROM job_descriptions jd
+    //   LEFT JOIN candidate_evaluations ce ON jd.id = ce.job_description_id
+    //   GROUP BY jd.id
+    //   ORDER BY jd.created_at DESC`
+    // );
+
+        const jobDescriptions = await query(
+      `  SELECT 
+    jd.*,
+    COUNT(DISTINCT ce.resume_id) AS resume_count,
+    (
+        SELECT COUNT(*) 
+        FROM candidate_evaluations ce2
+        WHERE ce2.status = 'accepted'
+        AND ce2.job_description_id = jd.id
+    ) AS accepted,
+    (
+        SELECT COUNT(*) 
+        FROM candidate_evaluations ce2
+        WHERE ce2.status = 'pending'
+        AND ce2.job_description_id = jd.id
+    ) AS pending,
+    (
+        SELECT COUNT(*) 
+        FROM candidate_evaluations ce2
+        WHERE ce2.status = 'rejected'
+        AND ce2.job_description_id = jd.id
+    ) AS rejected
+FROM job_descriptions jd
+LEFT JOIN candidate_evaluations ce 
+    ON jd.id = ce.job_description_id
+GROUP BY jd.id
+ORDER BY jd.created_at DESC`
     );
+
+  
 
     // Parse JSON fields
     const parsedJobDescriptions = jobDescriptions.map(jd => ({
