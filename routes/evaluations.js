@@ -255,8 +255,8 @@ router.post('/evaluate-with-qa',  upload.single('resume'), handleMulterError, as
     const resumeText = await extractTextFromFile(filePath, mimetype);
     console.log(`   ✅ Text extracted (${resumeText.length} characters)`);
 
-    // Parse resume with Gemini
-    console.log(`   🤖 Parsing resume with Gemini AI...`);
+    // Parse resume with Groq
+    console.log(`   🤖 Parsing resume with Groq AI...`);
     const parsedData = await parseResumeWithGemini(resumeText, fileName);
     console.log(`   ✅ Resume parsed - Name: ${parsedData.name || 'N/A'}, Email: ${parsedData.email || 'N/A'}`);
 

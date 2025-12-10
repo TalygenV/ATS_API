@@ -18,7 +18,7 @@ const router = express.Router();
 const uploadToTalygen = async (filePath, fileName, mimetype, resumeId = null) => {
   try {
     let apiToken = process.env.TALYGEN_API_TOKEN;
-    const apiUrl = process.env.TALYGEN_API_URL || 'https://stagefilemedia.talygen.com/api/UploadStreamNew';
+    const apiUrl = process.env.TALYGEN_API_URL || 'https://appfilemedia.talygen.com/api/UploadStreamNew';
 
     if (!apiToken) {
       console.warn('⚠️  Talygen API token not configured, skipping Talygen upload');
@@ -197,24 +197,24 @@ const uploadMemory = multer({
 const handleMulterError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'File too large. Maximum file size is 10MB.'
       });
     }
     if (err.code === 'LIMIT_FILE_COUNT') {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'Too many files. Maximum is 5 files for bulk upload.'
       });
     }
-    return res.status(400).json({
+    return res.status(200).json({
       success: false,
       error: err.message || 'File upload error'
     });
   }
   if (err) {
-    return res.status(400).json({
+    return res.status(200).json({
       success: false,
       error: err.message || 'Upload error'
     });
@@ -231,12 +231,12 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
   
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+      return res.status(200).json({ error: 'No file uploaded' });
     }
 
     const { job_description_id } = req.body;
     if (!job_description_id) {
-      return res.status(400).json({ error: 'Job description ID is required' });
+      return res.status(200).json({ error: 'Job description ID is required' });
     }
 
     // Fetch job description
@@ -256,7 +256,7 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
     // Extract text from file
     const resumeText = await extractTextFromFile(filePath, mimetype);
 
-    // Parse resume with Gemini
+    // Parse resume with Groq
     const parsedData = await parseResumeWithGemini(resumeText, fileName);
 
     // Normalize email to lowercase for consistency
@@ -284,7 +284,7 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
         } catch (e) {
           // Ignore cleanup errors
         }
-        return res.status(400).json({
+        return res.status(200).json({
           error: 'This candidate has already applied within the last 6 months'
         });
       }
@@ -440,7 +440,7 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
     console.error('Stack:', error.stack);
     console.log(`==========================================\n`);
     
-    res.status(500).json({
+    res.status(200).json({
       error: 'Failed to process resume',
       message: error.message
     });
@@ -457,7 +457,7 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
   try {
     if (!req.files || req.files.length === 0) {
       console.log('❌ ERROR: No files uploaded');
-      return res.status(400).json({ error: 'No files uploaded' });
+      return res.status(200).json({ error: 'No files uploaded' });
     }
 
     // Enforce maximum 5 files limit for bulk upload
@@ -472,7 +472,7 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
           // Ignore cleanup errors
         }
       }
-      return res.status(400).json({ 
+      return res.status(200).json({ 
         error: `Too many files. Maximum ${MAX_BULK_FILES} files allowed for bulk upload.`,
         received: req.files.length,
         maxAllowed: MAX_BULK_FILES
@@ -531,8 +531,8 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
         const resumeText = await extractTextFromFile(filePath, mimetype);
         console.log(`   ✅ Text extracted (${resumeText.length} characters)`);
 
-        console.log(`   🤖 Parsing resume with Gemini AI...`);
-        // Parse resume with Gemini
+        console.log(`   🤖 Parsing resume with Groq AI...`);
+        // Parse resume with Groq
         const parsedData = await parseResumeWithGemini(resumeText, fileName);
         console.log(`   ✅ Resume parsed - Name: ${parsedData.name || 'N/A'}, Email: ${parsedData.email || 'N/A'}`);
 
@@ -744,7 +744,7 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
     console.error('Error:', error.message);
     console.error('Stack:', error.stack);
     console.log(`==========================================\n`);
-    res.status(500).json({
+    res.status(200).json({
       error: 'Failed to process resumes',
       message: error.message
     });
@@ -760,11 +760,11 @@ router.post('/talygen', authenticate, requireWriteAccess, uploadMemory.single('f
   
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+      return res.status(200).json({ error: 'No file uploaded' });
     }
 
     const apiToken = process.env.TALYGEN_API_TOKEN;
-    const apiUrl = process.env.TALYGEN_API_URL || 'https://stagefilemedia.talygen.com/api/UploadStreamNew';
+    const apiUrl = process.env.TALYGEN_API_URL || 'https://appfilemedia.talygen.com/api/UploadStreamNew';
 
     if (!apiToken) {
       return res.status(500).json({ error: 'Talygen API token not configured' });

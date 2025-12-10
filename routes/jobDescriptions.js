@@ -9,13 +9,20 @@ const router = express.Router();
 router.get('/', authenticate, async (req, res) => {
   try {
     const jobDescriptions = await query(
-      'SELECT * FROM job_descriptions ORDER BY created_at DESC'
+      `SELECT 
+        jd.*,
+        COUNT(DISTINCT ce.resume_id) as resume_count
+      FROM job_descriptions jd
+      LEFT JOIN candidate_evaluations ce ON jd.id = ce.job_description_id
+      GROUP BY jd.id
+      ORDER BY jd.created_at DESC`
     );
 
     // Parse JSON fields
     const parsedJobDescriptions = jobDescriptions.map(jd => ({
       ...jd,
-      interviewers: jd.interviewers ? JSON.parse(jd.interviewers) : []
+      interviewers: jd.interviewers ? JSON.parse(jd.interviewers) : [],
+      resume_count: parseInt(jd.resume_count) || 0
     }));
 
     res.json({

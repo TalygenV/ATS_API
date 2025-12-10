@@ -1,4 +1,54 @@
-const genAI = require('../config/gemini');
+const groq = require('../config/groq');
+
+/**
+ * Extract JSON from text by finding matching braces
+ * Handles cases where there's text before or after the JSON object
+ */
+function extractJSON(text) {
+  const startIndex = text.indexOf('{');
+  if (startIndex === -1) {
+    return null;
+  }
+  
+  let braceCount = 0;
+  let inString = false;
+  let escapeNext = false;
+  
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+    
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+    
+    if (char === '"' && !escapeNext) {
+      inString = !inString;
+      continue;
+    }
+    
+    if (!inString) {
+      if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          // Found the matching closing brace
+          return text.substring(startIndex, i + 1);
+        }
+      }
+    }
+  }
+  
+  // If we didn't find a matching brace, return the original match
+  const fallbackMatch = text.match(/\{[\s\S]*\}/);
+  return fallbackMatch ? fallbackMatch[0] : null;
+}
 
 /**
  * Compare resume with job description and generate match scores
@@ -8,17 +58,8 @@ const genAI = require('../config/gemini');
  * @returns {Promise<object>} Match scores and details
  */
 async function matchResumeWithJobDescription(resumeText, jobDescription, parsedResumeData) {
-  // List of models to try in order (prioritized by capability and availability)
-  // When quota is exceeded (429), automatically switches to next model
-  const modelsToTry = [
-    'gemini-2.5-flash'
-    ,'gemini-2.5-flash-live'
-    ,'gemini-2.5-flash-native-audio-dialog'
-    ,'gemini-2.5-flash-tts'
-    ,'gemini-2.5-flash-lite'
-    ,'gemini-2.0-flash-live'
-    ,'gemini-2.0-flash'
-  ];
+  // Using Groq's llama-3.1-8b-instant model
+  const modelName = 'llama-3.1-8b-instant';
   
   const prompt = `You are an expert HR recruiter evaluating a candidate's resume against a job description. Analyze the resume and job description, then provide a comprehensive matching score and detailed analysis.
 
@@ -63,7 +104,11 @@ IMPORTANT INSTRUCTIONS:
    - "pending" if overall_match >= 50 and < 70
    - "rejected" if overall_match < 50
 8. Provide detailed, actionable feedback in the details fields
-9. Return ONLY valid JSON, no additional text or markdown formatting`;
+9. CRITICAL OUTPUT FORMAT: Your response MUST start with the opening brace { and end with the closing brace }. Do NOT include any text, explanations, comments, or markdown before or after the JSON object. Do NOT use code blocks (\`\`\`json or \`\`\`). Do NOT add any prefix like "Here is the analysis:" or "The match results are:". Your ENTIRE response must be ONLY the JSON object itself, nothing else.
+10. Ensure all special characters in string values are properly escaped (e.g., quotes, newlines, backslashes). Use \\n for newlines, \\" for quotes, \\\\ for backslashes.
+11. All string values must be properly quoted and escaped. Do not include unescaped control characters or invalid JSON characters.
+
+Remember: Your response must be ONLY valid JSON starting with { and ending with }. No other text whatsoever.`;
 
   // Helper function to retry API calls with exponential backoff
   async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
@@ -96,21 +141,26 @@ IMPORTANT INSTRUCTIONS:
 
   let lastError = null;
   
-  // Try each model until one works
-  for (const modelName of modelsToTry) {
-    try {
-      console.log(`   🔄 Trying model for matching: ${modelName}`);
-      
-      const model = genAI.getGenerativeModel({ model: modelName });
-      
-      // Retry API call with exponential backoff
-      const result = await retryWithBackoff(async () => {
-        return await model.generateContent(prompt);
-      }, 3, 2000);
-      
-      const response = await result.response;
-      const text = response.text();
-      console.log(`   ✅ Got matching response from ${modelName}`);
+  try {
+    console.log(`   🔄 Using Groq model for matching: ${modelName}`);
+    
+    // Retry API call with exponential backoff
+    const result = await retryWithBackoff(async () => {
+      return await groq.chat.completions.create({
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        model: modelName,
+        temperature: 0.3,
+        max_tokens: 4096
+      });
+    }, 3, 2000);
+    
+    const text = result.choices[0]?.message?.content || '';
+    console.log(`   ✅ Got matching response from ${modelName}`);
 
       // Clean the response to extract JSON
       let jsonText = text.trim();
@@ -121,19 +171,32 @@ IMPORTANT INSTRUCTIONS:
       jsonText = jsonText.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, ''); // Remove other control chars except \n, \r, \t
       
       // Remove markdown code blocks if present
-      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+      jsonText = jsonText.replace(/```json\n?/gi, '').replace(/```\n?/g, '');
       
-      // Try to extract JSON from the response
-      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        jsonText = jsonMatch[0];
+      // Remove any text before the first opening brace (common issue: "However, y..." or "Here is the JSON:")
+      const firstBraceIndex = jsonText.indexOf('{');
+      if (firstBraceIndex > 0) {
+        jsonText = jsonText.substring(firstBraceIndex);
+      }
+      
+      // Try to extract JSON from the response using brace matching
+      let extractedJson = extractJSON(jsonText);
+      if (extractedJson) {
+        jsonText = extractedJson;
         // Clean again after extraction in case the match included some control chars
         jsonText = jsonText.replace(/\u0000/g, '').replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, '');
+      } else {
+        // Fallback to regex if brace matching fails
+        const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonText = jsonMatch[0];
+          jsonText = jsonText.replace(/\u0000/g, '').replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, '');
+        }
       }
 
       // Validate that we have valid JSON text before parsing
       if (!jsonText || jsonText.trim().length === 0) {
-        throw new Error('Empty or invalid JSON response from Gemini API');
+        throw new Error('Empty or invalid JSON response from Groq API');
       }
 
       let matchData;
@@ -143,7 +206,25 @@ IMPORTANT INSTRUCTIONS:
         // Log the problematic JSON for debugging
         console.error(`   ❌ JSON Parse Error: ${parseError.message}`);
         console.error(`   ❌ JSON text length: ${jsonText.length}`);
-        console.error(`   ❌ JSON preview (first 500 chars): ${jsonText.substring(0, 500)}`);
+        
+        // Extract position from error message if available
+        const positionMatch = parseError.message.match(/position (\d+)/);
+        if (positionMatch) {
+          const position = parseInt(positionMatch[1]);
+          const start = Math.max(0, position - 100);
+          const end = Math.min(jsonText.length, position + 100);
+          console.error(`   ❌ Context around error position ${position}:`);
+          console.error(`   ${jsonText.substring(start, end)}`);
+          console.error(`   ${' '.repeat(Math.min(100, position - start))}^`);
+        } else {
+          console.error(`   ❌ JSON preview (first 500 chars): ${jsonText.substring(0, 500)}`);
+        }
+        
+        // Also log the last 200 chars in case the issue is at the end
+        if (jsonText.length > 500) {
+          console.error(`   ❌ JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
+        }
+        
         throw new Error(`Failed to parse JSON response: ${parseError.message}. Response may contain invalid characters.`);
       }
       
@@ -152,54 +233,13 @@ IMPORTANT INSTRUCTIONS:
       
       console.log(`   ✅ Successfully matched resume with ${modelName}`);
 
-      return matchData;
-    } catch (error) {
-      lastError = error;
-      const errorMsg = error.message || 'Unknown error';
-      const errorString = JSON.stringify(error) || '';
-      
-      // Check for quota exceeded errors (429) - this is the main case we need to handle
-      const isQuotaError = 
-        errorMsg.includes('429') || 
-        errorMsg.includes('quota') || 
-        errorMsg.includes('Quota exceeded') ||
-        errorMsg.includes('exceeded your current quota') ||
-        errorString.includes('429') ||
-        errorString.includes('quota');
-      
-      if (isQuotaError) {
-        console.log(`   ⚠️  Quota exceeded for ${modelName}, switching to next model...`);
-        continue;
-      }
-      
-      // If it's a 404 (model not found), try the next model
-      if (errorMsg.includes('404') || errorMsg.includes('not found')) {
-        console.log(`   ⚠️  Model ${modelName} not available, trying next model...`);
-        continue;
-      }
-      
-      // If it's a network error, try the next model
-      if (errorMsg.includes('fetch failed') || errorMsg.includes('network') || errorMsg.includes('ECONNRESET') || errorMsg.includes('ETIMEDOUT')) {
-        console.log(`   ⚠️  Network error with ${modelName}: ${errorMsg}, trying next model...`);
-        continue;
-      }
-      
-      // For other API errors (401, 403, etc.), log and try next model
-      if (errorMsg.includes('401') || errorMsg.includes('403')) {
-        console.log(`   ⚠️  API error with ${modelName}: ${errorMsg}, trying next model...`);
-        continue;
-      }
-      
-      // For other errors, log and try next model
-      console.log(`   ⚠️  Error with ${modelName}: ${errorMsg}, trying next model...`);
-      continue;
-    }
+    return matchData;
+  } catch (error) {
+    lastError = error;
+    const errorMsg = error.message || 'Unknown error';
+    console.error(`   ❌ Error matching resume with Groq: ${errorMsg}`);
+    throw new Error(`Error matching resume with job description: ${errorMsg}. Please check your API key and network connection.`);
   }
-  
-  // If all models failed, throw the last error with more context
-  const errorDetails = lastError?.message || 'Unknown error';
-  console.error(`   ❌ All models failed for matching. Last error: ${errorDetails}`);
-  throw new Error(`Error matching resume with job description: All models failed. Last error: ${errorDetails}. Please check your API key and network connection.`);
 }
 
 /**
@@ -262,17 +302,8 @@ function validateAndNormalizeMatchData(matchData) {
  * @returns {Promise<object>} Match scores and details
  */
 async function matchResumeWithJobDescriptionAndQA(resumeText, jobDescription, parsedResumeData, questionAnswers = {}) {
-  // List of models to try in order (prioritized by capability and availability)
-  // When quota is exceeded (429), automatically switches to next model
-  const modelsToTry = [
-    'gemini-2.5-flash'
-    ,'gemini-2.5-flash-live'
-    ,'gemini-2.5-flash-native-audio-dialog'
-    ,'gemini-2.5-flash-tts'
-    ,'gemini-2.5-flash-lite'
-    ,'gemini-2.0-flash-live'
-    ,'gemini-2.0-flash'
-  ];
+  // Using Groq's llama-3.1-8b-instant model
+  const modelName = 'llama-3.1-8b-instant';
   
   // Format Q&A for the prompt
   let qaSection = '';
@@ -326,7 +357,11 @@ IMPORTANT INSTRUCTIONS:
    - "pending" if overall_match >= 50 and < 70
    - "rejected" if overall_match < 50
 9. Provide detailed, actionable feedback in the details fields, including insights from Q&A responses
-10. Return ONLY valid JSON, no additional text or markdown formatting`;
+10. CRITICAL OUTPUT FORMAT: Your response MUST start with the opening brace { and end with the closing brace }. Do NOT include any text, explanations, comments, or markdown before or after the JSON object. Do NOT use code blocks (\`\`\`json or \`\`\`). Do NOT add any prefix like "Here is the analysis:" or "The match results are:". Your ENTIRE response must be ONLY the JSON object itself, nothing else.
+11. Ensure all special characters in string values are properly escaped (e.g., quotes, newlines, backslashes). Use \\n for newlines, \\" for quotes, \\\\ for backslashes.
+12. All string values must be properly quoted and escaped. Do not include unescaped control characters or invalid JSON characters.
+
+Remember: Your response must be ONLY valid JSON starting with { and ending with }. No other text whatsoever.`;
 
   // Helper function to retry API calls with exponential backoff
   async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
@@ -359,110 +394,99 @@ IMPORTANT INSTRUCTIONS:
 
   let lastError = null;
   
-  // Try each model until one works
-  for (const modelName of modelsToTry) {
-    try {
-      console.log(`   🔄 Trying model for matching with Q&A: ${modelName}`);
-      
-      const model = genAI.getGenerativeModel({ model: modelName });
-      
-      // Retry API call with exponential backoff
-      const result = await retryWithBackoff(async () => {
-        return await model.generateContent(prompt);
-      }, 3, 2000);
-      
-      const response = await result.response;
-      const text = response.text();
-      console.log(`   ✅ Got matching response from ${modelName}`);
+  try {
+    console.log(`   🔄 Using Groq model for matching with Q&A: ${modelName}`);
+    
+    // Retry API call with exponential backoff
+    const result = await retryWithBackoff(async () => {
+      return await groq.chat.completions.create({
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        model: modelName,
+        temperature: 0.3,
+        max_tokens: 4096
+      });
+    }, 3, 2000);
+    
+    const text = result.choices[0]?.message?.content || '';
+    console.log(`   ✅ Got matching response from ${modelName}`);
 
-      // Clean the response to extract JSON
-      let jsonText = text.trim();
-      
-      // Remove null bytes and other control characters that can corrupt JSON
-      // Replace null bytes (\u0000) and other problematic control characters
-      jsonText = jsonText.replace(/\u0000/g, ''); // Remove null bytes
-      jsonText = jsonText.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, ''); // Remove other control chars except \n, \r, \t
-      
-      // Remove markdown code blocks if present
-      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-      
-      // Try to extract JSON from the response
+    // Clean the response to extract JSON
+    let jsonText = text.trim();
+    
+    // Remove null bytes and other control characters that can corrupt JSON
+    // Replace null bytes (\u0000) and other problematic control characters
+    jsonText = jsonText.replace(/\u0000/g, ''); // Remove null bytes
+    jsonText = jsonText.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, ''); // Remove other control chars except \n, \r, \t
+    
+    // Remove markdown code blocks if present
+    jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    
+    // Try to extract JSON from the response using brace matching
+    let extractedJson = extractJSON(jsonText);
+    if (extractedJson) {
+      jsonText = extractedJson;
+      // Clean again after extraction in case the match included some control chars
+      jsonText = jsonText.replace(/\u0000/g, '').replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, '');
+    } else {
+      // Fallback to regex if brace matching fails
       const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         jsonText = jsonMatch[0];
-        // Clean again after extraction in case the match included some control chars
         jsonText = jsonText.replace(/\u0000/g, '').replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, '');
       }
-
-      // Validate that we have valid JSON text before parsing
-      if (!jsonText || jsonText.trim().length === 0) {
-        throw new Error('Empty or invalid JSON response from Gemini API');
-      }
-
-      let matchData;
-      try {
-        matchData = JSON.parse(jsonText);
-      } catch (parseError) {
-        // Log the problematic JSON for debugging
-        console.error(`   ❌ JSON Parse Error: ${parseError.message}`);
-        console.error(`   ❌ JSON text length: ${jsonText.length}`);
-        console.error(`   ❌ JSON preview (first 500 chars): ${jsonText.substring(0, 500)}`);
-        throw new Error(`Failed to parse JSON response: ${parseError.message}. Response may contain invalid characters.`);
-      }
-      
-      // Validate and normalize the data
-      matchData = validateAndNormalizeMatchData(matchData);
-      
-      console.log(`   ✅ Successfully matched resume with Q&A using ${modelName}`);
-
-      return matchData;
-    } catch (error) {
-      lastError = error;
-      const errorMsg = error.message || 'Unknown error';
-      const errorString = JSON.stringify(error) || '';
-      
-      // Check for quota exceeded errors (429) - this is the main case we need to handle
-      const isQuotaError = 
-        errorMsg.includes('429') || 
-        errorMsg.includes('quota') || 
-        errorMsg.includes('Quota exceeded') ||
-        errorMsg.includes('exceeded your current quota') ||
-        errorString.includes('429') ||
-        errorString.includes('quota');
-      
-      if (isQuotaError) {
-        console.log(`   ⚠️  Quota exceeded for ${modelName}, switching to next model...`);
-        continue;
-      }
-      
-      // If it's a 404 (model not found), try the next model
-      if (errorMsg.includes('404') || errorMsg.includes('not found')) {
-        console.log(`   ⚠️  Model ${modelName} not available, trying next model...`);
-        continue;
-      }
-      
-      // If it's a network error, try the next model
-      if (errorMsg.includes('fetch failed') || errorMsg.includes('network') || errorMsg.includes('ECONNRESET') || errorMsg.includes('ETIMEDOUT')) {
-        console.log(`   ⚠️  Network error with ${modelName}: ${errorMsg}, trying next model...`);
-        continue;
-      }
-      
-      // For other API errors (401, 403, etc.), log and try next model
-      if (errorMsg.includes('401') || errorMsg.includes('403')) {
-        console.log(`   ⚠️  API error with ${modelName}: ${errorMsg}, trying next model...`);
-        continue;
-      }
-      
-      // For other errors, log and try next model
-      console.log(`   ⚠️  Error with ${modelName}: ${errorMsg}, trying next model...`);
-      continue;
     }
+
+    // Validate that we have valid JSON text before parsing
+    if (!jsonText || jsonText.trim().length === 0) {
+      throw new Error('Empty or invalid JSON response from Groq API');
+    }
+
+    let matchData;
+    try {
+      matchData = JSON.parse(jsonText);
+    } catch (parseError) {
+      // Log the problematic JSON for debugging
+      console.error(`   ❌ JSON Parse Error: ${parseError.message}`);
+      console.error(`   ❌ JSON text length: ${jsonText.length}`);
+      
+      // Extract position from error message if available
+      const positionMatch = parseError.message.match(/position (\d+)/);
+      if (positionMatch) {
+        const position = parseInt(positionMatch[1]);
+        const start = Math.max(0, position - 100);
+        const end = Math.min(jsonText.length, position + 100);
+        console.error(`   ❌ Context around error position ${position}:`);
+        console.error(`   ${jsonText.substring(start, end)}`);
+        console.error(`   ${' '.repeat(Math.min(100, position - start))}^`);
+      } else {
+        console.error(`   ❌ JSON preview (first 500 chars): ${jsonText.substring(0, 500)}`);
+      }
+      
+      // Also log the last 200 chars in case the issue is at the end
+      if (jsonText.length > 500) {
+        console.error(`   ❌ JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
+      }
+      
+      throw new Error(`Failed to parse JSON response: ${parseError.message}. Response may contain invalid characters.`);
+    }
+    
+    // Validate and normalize the data
+    matchData = validateAndNormalizeMatchData(matchData);
+    
+    console.log(`   ✅ Successfully matched resume with Q&A using ${modelName}`);
+
+    return matchData;
+  } catch (error) {
+    lastError = error;
+    const errorMsg = error.message || 'Unknown error';
+    console.error(`   ❌ Error matching resume with Groq: ${errorMsg}`);
+    throw new Error(`Error matching resume with job description and Q&A: ${errorMsg}. Please check your API key and network connection.`);
   }
-  
-  // If all models failed, throw the last error with more context
-  const errorDetails = lastError?.message || 'Unknown error';
-  console.error(`   ❌ All models failed for matching with Q&A. Last error: ${errorDetails}`);
-  throw new Error(`Error matching resume with job description and Q&A: All models failed. Last error: ${errorDetails}. Please check your API key and network connection.`);
 }
 
 module.exports = {

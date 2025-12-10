@@ -149,7 +149,7 @@ router.post('/generate', async (req, res) => {
       flatQuestions = [];
     }
 
-    // Fallback: if Gemini or parsing fails, still provide some basic JD-based questions
+    // Fallback: if Groq or parsing fails, still provide some basic JD-based questions
     if (!flatQuestions || flatQuestions.length === 0) {
       flatQuestions = [
         'Total overall professional experience (in years)',

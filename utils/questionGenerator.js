@@ -1,4 +1,54 @@
-const genAI = require('../config/gemini');
+const groq = require('../config/groq');
+
+/**
+ * Extract JSON from text by finding matching braces
+ * Handles cases where there's text before or after the JSON object
+ */
+function extractJSON(text) {
+  const startIndex = text.indexOf('{');
+  if (startIndex === -1) {
+    return null;
+  }
+  
+  let braceCount = 0;
+  let inString = false;
+  let escapeNext = false;
+  
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+    
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+    
+    if (char === '"' && !escapeNext) {
+      inString = !inString;
+      continue;
+    }
+    
+    if (!inString) {
+      if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          // Found the matching closing brace
+          return text.substring(startIndex, i + 1);
+        }
+      }
+    }
+  }
+  
+  // If we didn't find a matching brace, return the original match
+  const fallbackMatch = text.match(/\{[\s\S]*\}/);
+  return fallbackMatch ? fallbackMatch[0] : null;
+}
 
 // Helper function to retry API calls with exponential backoff
 async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
@@ -38,13 +88,8 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
  * @returns {Promise<object>} Object with categories and questions
  */
 async function generateQuestionsFromJD(jobDescription, options = {}) {
-  // List of models to try in order (prioritized by capability and availability)
-  // When quota is exceeded (429), automatically switches to next model
-  const modelsToTry = [
-    
-    'gemini-2.5-flash-lite'
-    
-  ];
+  // Using Groq's llama-3.1-8b-instant model
+  const modelName = 'llama-3.1-8b-instant';
 
   const { title, seniority, yearsOfExperience } = options;
 
@@ -70,7 +115,7 @@ ${jobDescription}
 5. Do not repeat questions for the same competency even if mentioned multiple times.
 6. First category must ALWAYS be **Overall Experience** with the exact predefined question below.
 
-⚠️ OUTPUT MUST BE JSON ONLY — NO EXPLANATIONS.
+⚠️ CRITICAL OUTPUT FORMAT: Your response MUST start with the opening brace { and end with the closing brace }. Do NOT include any text, explanations, comments, or markdown before or after the JSON object. Do NOT use code blocks (\`\`\`json or \`\`\`). Do NOT add any prefix like "Here are the questions:" or "The generated questions are:". Your ENTIRE response must be ONLY the JSON object itself, nothing else.
 
 📌 JSON STRUCTURE (strict — must match exactly)
 {
@@ -107,45 +152,69 @@ ${jobDescription}
   - text (the question)
   - type (yes_no | true_false | number)
   - unit ONLY if type = number (value must be "years")
+- Ensure all special characters in string values are properly escaped (e.g., quotes, newlines, backslashes). Use \\n for newlines, \\" for quotes, \\\\ for backslashes.
+- All string values must be properly quoted and escaped. Do not include unescaped control characters or invalid JSON characters.
 
-Return ONLY the JSON — nothing else.
+Remember: Your response must be ONLY valid JSON starting with { and ending with }. No other text whatsoever.
 
   `;
   
 
   let lastError = null;
 
-  for (const modelName of modelsToTry) {
-    try {
-      console.log(`   🔄 Trying model for question generation: ${modelName}`);
+  try {
+    console.log(`   🔄 Using Groq model for question generation: ${modelName}`);
 
-      const model = genAI.getGenerativeModel({ model: modelName });
+    const result = await retryWithBackoff(async () => {
+      return await groq.chat.completions.create({
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        model: modelName,
+        temperature: 0.3,
+        max_tokens: 4096
+      });
+    }, 3, 2000);
 
-      const result = await retryWithBackoff(async () => {
-        return await model.generateContent(prompt);
-      }, 3, 2000);
-
-      const response = await result.response;
-      const text = response.text();
-      console.log(`   ✅ Got question generation response from ${modelName}`);
+    const text = result.choices[0]?.message?.content || '';
+    console.log(`   ✅ Got question generation response from ${modelName}`);
 
       let jsonText = text.trim();
 
       // Clean control characters and markdown fences
       jsonText = jsonText.replace(/\u0000/g, '');
       jsonText = jsonText.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, '');
-      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+      jsonText = jsonText.replace(/```json\n?/gi, '').replace(/```\n?/g, '');
+      
+      // Remove any text before the first opening brace (common issue: "However, y..." or "Here is the JSON:")
+      const firstBraceIndex = jsonText.indexOf('{');
+      if (firstBraceIndex > 0) {
+        jsonText = jsonText.substring(firstBraceIndex);
+      }
 
-      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        jsonText = jsonMatch[0];
+      // Try to extract JSON from the response using brace matching
+      let extractedJson = extractJSON(jsonText);
+      if (extractedJson) {
+        jsonText = extractedJson;
         jsonText = jsonText
           .replace(/\u0000/g, '')
           .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, '');
+      } else {
+        // Fallback to regex if brace matching fails
+        const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonText = jsonMatch[0];
+          jsonText = jsonText
+            .replace(/\u0000/g, '')
+            .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, '');
+        }
       }
 
       if (!jsonText || jsonText.trim().length === 0) {
-        throw new Error('Empty or invalid JSON response from Gemini API');
+        throw new Error('Empty or invalid JSON response from Groq API');
       }
 
       let data;
@@ -154,9 +223,27 @@ Return ONLY the JSON — nothing else.
       } catch (parseError) {
         console.error(`   ❌ JSON Parse Error (questions): ${parseError.message}`);
         console.error(`   ❌ JSON text length: ${jsonText.length}`);
-        console.error(
-          `   ❌ JSON preview (first 400 chars): ${jsonText.substring(0, 400)}`
-        );
+        
+        // Extract position from error message if available
+        const positionMatch = parseError.message.match(/position (\d+)/);
+        if (positionMatch) {
+          const position = parseInt(positionMatch[1]);
+          const start = Math.max(0, position - 100);
+          const end = Math.min(jsonText.length, position + 100);
+          console.error(`   ❌ Context around error position ${position}:`);
+          console.error(`   ${jsonText.substring(start, end)}`);
+          console.error(`   ${' '.repeat(Math.min(100, position - start))}^`);
+        } else {
+          console.error(
+            `   ❌ JSON preview (first 400 chars): ${jsonText.substring(0, 400)}`
+          );
+        }
+        
+        // Also log the last 200 chars in case the issue is at the end
+        if (jsonText.length > 400) {
+          console.error(`   ❌ JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
+        }
+        
         throw new Error(
           `Failed to parse JSON response: ${parseError.message}. Response may contain invalid characters.`
         );
@@ -173,73 +260,16 @@ Return ONLY the JSON — nothing else.
         questions: Array.isArray(cat.questions) ? cat.questions : []
       }));
 
-      console.log(`   ✅ Successfully generated questions with ${modelName}`);
-      return data;
-    } catch (error) {
-      lastError = error;
-      const errorMsg = error.message || 'Unknown error';
-      const errorString = JSON.stringify(error) || '';
-      
-      // Check for quota exceeded errors (429) - this is the main case we need to handle
-      const isQuotaError = 
-        errorMsg.includes('429') || 
-        errorMsg.includes('quota') || 
-        errorMsg.includes('Quota exceeded') ||
-        errorMsg.includes('exceeded your current quota') ||
-        errorString.includes('429') ||
-        errorString.includes('quota');
-      
-      if (isQuotaError) {
-        console.log(`   ⚠️  Quota exceeded for ${modelName}, switching to next model...`);
-        continue;
-      }
-
-      if (
-        errorMsg.includes('404') ||
-        errorMsg.includes('not found')
-      ) {
-        console.log(
-          `   ⚠️  Model ${modelName} not available for question generation, trying next model...`
-        );
-        continue;
-      }
-
-      if (
-        errorMsg.includes('fetch failed') ||
-        errorMsg.includes('network') ||
-        errorMsg.includes('ECONNRESET') ||
-        errorMsg.includes('ETIMEDOUT')
-      ) {
-        console.log(
-          `   ⚠️  Network error with ${modelName} for question generation: ${errorMsg}, trying next model...`
-        );
-        continue;
-      }
-
-      if (
-        errorMsg.includes('401') ||
-        errorMsg.includes('403')
-      ) {
-        console.log(
-          `   ⚠️  API error with ${modelName} for question generation: ${errorMsg}, trying next model...`
-        );
-        continue;
-      }
-
-      console.log(
-        `   ⚠️  Error with ${modelName} for question generation: ${errorMsg}, trying next model...`
-      );
-      continue;
-    }
+    console.log(`   ✅ Successfully generated questions with ${modelName}`);
+    return data;
+  } catch (error) {
+    lastError = error;
+    const errorMsg = error.message || 'Unknown error';
+    console.error(`   ❌ Error generating questions with Groq: ${errorMsg}`);
+    throw new Error(
+      `Error generating questions from job description: ${errorMsg}. Please check your API key and network connection.`
+    );
   }
-
-  const errorDetails = lastError?.message || 'Unknown error';
-  console.error(
-    `   ❌ All models failed for question generation. Last error: ${errorDetails}`
-  );
-  throw new Error(
-    `Error generating questions from job description: All models failed. Last error: ${errorDetails}. Please check your API key and network connection.`
-  );
 }
 
 module.exports = {
