@@ -23,19 +23,20 @@ router.get('/', authenticate, async (req, res) => {
     jd.*,
     COUNT(DISTINCT ce.resume_id) AS resume_count,
     (
-        SELECT COUNT(*) 
+      
+        SELECT COUNT(DISTINCT ce2.email) 
         FROM candidate_evaluations ce2
         WHERE ce2.status = 'accepted'
         AND ce2.job_description_id = jd.id
     ) AS accepted,
     (
-        SELECT COUNT(*) 
-        FROM candidate_evaluations ce2
+       SELECT COUNT(DISTINCT ce2.email) 
+       FROM candidate_evaluations ce2
         WHERE ce2.status = 'pending'
         AND ce2.job_description_id = jd.id
     ) AS pending,
     (
-        SELECT COUNT(*) 
+        SELECT COUNT(DISTINCT ce2.email) 
         FROM candidate_evaluations ce2
         WHERE ce2.status = 'rejected'
         AND ce2.job_description_id = jd.id
