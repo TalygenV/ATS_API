@@ -775,5 +775,51 @@ router.get('/available-slots', authenticate, async (req, res) => {
   }
 });
 
+// get today'is interviews list for admin and hr 
+
+router.get('/today-avaiable-interviews', authenticate, requireWriteAccess, async (req, res) => {
+   
+
+    try {
+        const sql = ` select  its.start_time , its.end_time ,users.full_name as interviewer_name,jd.title,ev.candidate_name 
+ from interviewer_time_slots its
+ inner join users
+     on its.interviewer_id = users.id 
+ inner join candidate_evaluations ev 
+   on its.evaluation_id = ev.id
+inner join job_descriptions jd
+    on ev.job_description_id = jd.id 
+ where Date(its.start_time) = utc_date() AND is_booked =1 
+
+`
+      const interviews = await query(sql);
+
+        if(interviews.length >  0)
+        {
+            return  res.status(200).json({
+        success: true,
+        count: interviews.length,
+        data: interviews
+      });
+        }
+
+          return res.status(200).json({
+            success: false,
+            count :0,
+            data : [],
+            message: 'No interviews scheduled for today'
+          })
+     
+    } catch (error) {
+           console.error('Error fetching available today interview:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch available today interviews',
+      message: error.message
+    });
+    }
+
+})
+
 module.exports = router;
 

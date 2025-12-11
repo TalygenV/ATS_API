@@ -24,7 +24,7 @@ const safeParseJSON = (value, defaultValue = null) => {
 router.get('/', authenticate, async (req, res) => {
   try {
     const resumes = await query(
-      'SELECT * FROM resumes ORDER BY created_at DESC'
+      'SELECT * FROM resumes where parent_id is null ORDER BY created_at DESC'
     );
 
     // Parse JSON fields
@@ -325,6 +325,38 @@ router.delete('/:id', authenticate, requireWriteAccess, async (req, res) => {
     console.error('Error deleting resume:', error);
     res.status(500).json({
       error: 'Failed to delete resume',
+      message: error.message
+    });
+  }
+});
+
+// Get all resumes (all authenticated users can view)
+
+// Get all resumes (all authenticated users can view)
+router.get('/new/new-resumes', authenticate, async (req, res) => {
+  try {
+    const resumes = await query(
+      'SELECT * FROM resumes where parent_id is null AND DATE(created_at) > utc_date() - INTERVAL 5 DAY ORDER BY created_at DESC LIMIT 4'
+    );
+
+    // Parse JSON fields
+    const parsedResumes = resumes.map(resume => ({
+      ...resume,
+      skills: resume.skills ? JSON.parse(resume.skills) : [],
+      experience: resume.experience ? JSON.parse(resume.experience) : [],
+      education: resume.education ? JSON.parse(resume.education) : [],
+      certifications: resume.certifications ? JSON.parse(resume.certifications) : []
+    }));
+
+    res.json({
+      success: true,
+      count: parsedResumes.length,
+      data: parsedResumes
+    });
+  } catch (error) {
+    console.error('Error fetching resumes:', error);
+    res.status(500).json({
+      error: 'Failed to fetch resumes',
       message: error.message
     });
   }
