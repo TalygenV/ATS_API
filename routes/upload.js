@@ -275,20 +275,20 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
     }
 
     // Check if candidate has applied within the last 6 months
-    if (normalizedEmail) {
-      const hasRecent = await hasRecentApplication(normalizedEmail);
-      if (hasRecent) {
-        // Clean up file before returning error
-        try {
-          await fsPromises.unlink(req.file.path);
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-        return res.status(200).json({
-          error: 'This candidate has already applied within the last 6 months'
-        });
-      }
-    }
+    // if (normalizedEmail) {
+    //   const hasRecent = await hasRecentApplication(normalizedEmail);
+    //   if (hasRecent) {
+    //     // Clean up file before returning error
+    //     try {
+    //       await fsPromises.unlink(req.file.path);
+    //     } catch (e) {
+    //       // Ignore cleanup errors
+    //     }
+    //     return res.status(200).json({
+    //       error: 'This candidate has already applied within the last 6 months'
+    //     });
+    //   }
+    // }
 
     // Ensure we preserve the original filename with extension for download
     const originalFileName = fileName;
