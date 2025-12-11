@@ -8,45 +8,93 @@ const router = express.Router();
 // Get all job descriptions (all authenticated users can view)
 router.get('/', authenticate, async (req, res) => {
   try {
-    // const jobDescriptions = await query(
-    //   `SELECT 
-    //     jd.*,
-    //     COUNT(DISTINCT ce.resume_id) as resume_count
-    //   FROM job_descriptions jd
-    //   LEFT JOIN candidate_evaluations ce ON jd.id = ce.job_description_id
-    //   GROUP BY jd.id
-    //   ORDER BY jd.created_at DESC`
-    // );
-
-        const jobDescriptions = await query(
-      `  SELECT 
-    jd.*,
-    COUNT(DISTINCT ce.resume_id) AS resume_count,
-    (
+   
+//     let params = []
+//      let sql =  `  SELECT 
+//     jd.*,
+//     COUNT(DISTINCT ce.resume_id) AS resume_count,
+//     (
       
-        SELECT COUNT(DISTINCT ce2.email) 
-        FROM candidate_evaluations ce2
-        WHERE ce2.status = 'accepted'
-        AND ce2.job_description_id = jd.id
-    ) AS accepted,
-    (
-       SELECT COUNT(DISTINCT ce2.email) 
-       FROM candidate_evaluations ce2
-        WHERE ce2.status = 'pending'
-        AND ce2.job_description_id = jd.id
-    ) AS pending,
-    (
-        SELECT COUNT(DISTINCT ce2.email) 
-        FROM candidate_evaluations ce2
-        WHERE ce2.status = 'rejected'
-        AND ce2.job_description_id = jd.id
-    ) AS rejected
-FROM job_descriptions jd
-LEFT JOIN candidate_evaluations ce 
-    ON jd.id = ce.job_description_id
-GROUP BY jd.id
-ORDER BY jd.created_at DESC`
-    );
+//         SELECT COUNT(DISTINCT ce2.email) 
+//         FROM candidate_evaluations ce2
+//         WHERE ce2.status = 'accepted'
+//         AND ce2.job_description_id = jd.id
+//     ) AS accepted,
+//     (
+//        SELECT COUNT(DISTINCT ce2.email) 
+//        FROM candidate_evaluations ce2
+//         WHERE ce2.status = 'pending'
+//         AND ce2.job_description_id = jd.id
+//     ) AS pending,
+//     (
+//         SELECT COUNT(DISTINCT ce2.email) 
+//         FROM candidate_evaluations ce2
+//         WHERE ce2.status = 'rejected'
+//         AND ce2.job_description_id = jd.id
+//     ) AS rejected
+// FROM job_descriptions jd
+// LEFT JOIN candidate_evaluations ce 
+//     ON jd.id = ce.job_description_id
+// GROUP BY jd.id
+// ORDER BY jd.created_at DESC`
+
+        let params = [];
+
+    // If the user is an Interviewer we will restrict joins & subqueries to that interviewer
+    const isInterviewer = req.user.role === 'Interviewer';
+
+    // Join condition (restrict ce rows to this interviewer when applicable)
+    const joinCondition = isInterviewer ? ' AND ce.interviewer_id = ?' : '';
+    if (isInterviewer) params.push(req.user.id); // for the LEFT JOIN condition
+
+    // Subquery extra condition to restrict counts to this interviewer when applicable
+    const subQueryInterviewerCond = isInterviewer ? ' AND ce2.interviewer_id = ?' : '';
+
+    // If interviewer, we want to show only job_descriptions that have at least one candidate for them
+    // const havingClause = isInterviewer ? ' HAVING COUNT(DISTINCT ce.id) > 0' : '';
+      const havingClause = '';
+
+    const sql = `
+      SELECT
+        jd.*,
+        COUNT(DISTINCT ce.resume_id) AS resume_count,
+        (
+          SELECT COUNT(DISTINCT ce2.email)
+          FROM candidate_evaluations ce2
+          WHERE ce2.status = 'accepted'
+            AND ce2.job_description_id = jd.id
+            ${subQueryInterviewerCond}
+        ) AS accepted,
+        (
+          SELECT COUNT(DISTINCT ce2.email)
+          FROM candidate_evaluations ce2
+          WHERE ce2.status = 'pending'
+            AND ce2.job_description_id = jd.id
+            ${subQueryInterviewerCond}
+        ) AS pending,
+        (
+          SELECT COUNT(DISTINCT ce2.email)
+          FROM candidate_evaluations ce2
+          WHERE ce2.status = 'rejected'
+            AND ce2.job_description_id = jd.id
+            ${subQueryInterviewerCond}
+        ) AS rejected
+      FROM job_descriptions jd
+      LEFT JOIN candidate_evaluations ce
+        ON jd.id = ce.job_description_id ${joinCondition}
+      GROUP BY jd.id
+      ${havingClause}
+      ORDER BY jd.created_at DESC
+    `;
+
+    // If interviewer, we pushed one param for the LEFT JOIN already.
+    // For subqueries we must push the interviewer id once per subquery condition used.
+    if (isInterviewer) {
+      // three subqueries -> push interviewer id three more times (order matters)
+      params.push(req.user.id, req.user.id, req.user.id);
+    }
+
+        const jobDescriptions = await query(sql, params);
 
   
 
