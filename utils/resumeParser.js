@@ -3,25 +3,82 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const fs = require('fs').promises;
 
+// async function extractTextFromFile(filePath, mimetype) {
+//   try {
+//     if (mimetype === 'application/pdf') {
+//       const dataBuffer = await fs.readFile(filePath);
+//       const data = await pdfParse(dataBuffer);
+//       return data.text;
+//     } else if (
+//       mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+//       mimetype === 'application/msword'
+//     ) {
+//       const result = await mammoth.extractRawText({ path: filePath });
+//       return result.value;
+//     } else if (mimetype === 'text/plain') {
+//       return await fs.readFile(filePath, 'utf-8');
+//     } else {
+//       throw new Error('Unsupported file type');
+//     }
+//   } catch (error) {
+//     throw new Error(`Error extracting text: ${error.message}`);
+//   }
+// }
+
 async function extractTextFromFile(filePath, mimetype) {
   try {
     if (mimetype === 'application/pdf') {
       const dataBuffer = await fs.readFile(filePath);
-      const data = await pdfParse(dataBuffer);
-      return data.text;
-    } else if (
+      return await extractTextFromPDF(dataBuffer);
+    }
+    else if (
       mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
       mimetype === 'application/msword'
     ) {
       const result = await mammoth.extractRawText({ path: filePath });
       return result.value;
-    } else if (mimetype === 'text/plain') {
+    }
+    else if (mimetype === 'text/plain') {
       return await fs.readFile(filePath, 'utf-8');
-    } else {
+    }
+    else {
       throw new Error('Unsupported file type');
     }
+
   } catch (error) {
     throw new Error(`Error extracting text: ${error.message}`);
+  }
+}
+
+async function extractTextFromPDF(dataBuffer) {
+  try {
+    // Try pdf-parse first
+    return (await pdfParse(dataBuffer)).text;
+  } catch (err) {
+    console.warn("pdf-parse failed, retrying with pdf2json...", err.message);
+
+    // Fallback: pdf2json
+    return new Promise((resolve, reject) => {
+      const pdfParser = new PDFParser();
+
+      pdfParser.on("pdfParser_dataError", (errData) => {
+        reject(new Error(errData.parserError));
+      });
+
+      pdfParser.on("pdfParser_dataReady", (pdfData) => {
+        let text = "";
+        pdfData.Pages.forEach(page => {
+          page.Texts.forEach(t => {
+            t.R.forEach(r => {
+              text += decodeURIComponent(r.T) + " ";
+            });
+          });
+        });
+        resolve(text.trim());
+      });
+
+      pdfParser.parseBuffer(dataBuffer);
+    });
   }
 }
 
