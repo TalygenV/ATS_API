@@ -222,6 +222,164 @@ const handleMulterError = (err, req, res, next) => {
   next();
 };
 
+// Helper function to process a single resume file
+const processResumeFile = async (file, jobData) => {
+  const filePath = file.path;
+  const fileName = file.originalname;
+  const mimetype = file.mimetype;
+
+  // Extract text from file
+  const resumeText = await extractTextFromFile(filePath, mimetype);
+
+  // Parse resume with Gemini
+  const parsedData = await parseResumeWithGemini(resumeText, fileName);
+
+  // Normalize email to lowercase for consistency
+  const normalizedEmail = parsedData.email ? parsedData.email.toLowerCase().trim() : null;
+
+  // Check if candidate has applied within the last 6 months
+  // if (normalizedEmail) {
+  //   const hasRecent = await hasRecentApplication(normalizedEmail);
+  //   if (hasRecent) {
+  //     // Clean up file before throwing error
+  //     try {
+  //       await fsPromises.unlink(filePath);
+  //     } catch (e) {
+  //       // Ignore cleanup errors
+  //     }
+  //     throw new Error('This candidate has already applied within the last 6 months');
+  //   }
+  // }
+
+  // Check for duplicate resume and get versioning info
+  const originalResumeId = await findOriginalResume(parsedData);
+  let parentId = null;
+  let versionNumber = 1;
+
+  if (originalResumeId) {
+    // This is a duplicate - create a new version
+    parentId = originalResumeId;
+    versionNumber = await getNextVersionNumber(originalResumeId);
+    console.log(`📝 Duplicate detected! Creating version ${versionNumber} for candidate (Original ID: ${originalResumeId})`);
+  }
+
+  // Ensure we preserve the original filename with extension for download
+  const originalFileName = fileName;
+
+  console.log(`💾 Saving resume to database...`);
+  // Save to MySQL with file path and version number
+  const result = await query(
+    `INSERT INTO resumes (
+      file_name, file_path, name, email, phone, location, 
+      skills, experience, education, summary, certifications, 
+      raw_text, total_experience, parent_id, version_number
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      originalFileName,
+      filePath,
+      parsedData.name || null,
+      normalizedEmail,
+      parsedData.phone || null,
+      parsedData.location || null,
+      JSON.stringify(parsedData.skills || []),
+      JSON.stringify(parsedData.experience || []),
+      JSON.stringify(parsedData.education || []),
+      parsedData.summary || null,
+      JSON.stringify(parsedData.certifications || []),
+      resumeText,
+      parsedData.total_experience ? parseFloat(parsedData.total_experience) : null,
+      parentId,
+      versionNumber
+    ]
+  );
+
+  const savedResume = await queryOne(
+    'SELECT * FROM resumes WHERE id = ?',
+    [result.insertId]
+  );
+  console.log(`✅ Resume saved to database (ID: ${result.insertId})`);
+
+  // Upload to Talygen API and store response (now with resume_id)
+  let talygenUpload = null;
+  try {
+    talygenUpload = await uploadToTalygen(filePath, fileName, mimetype, result.insertId);
+  } catch (talygenError) {
+    console.error(`⚠️  Talygen upload failed, continuing with resume processing:`, talygenError.message);
+  }
+
+  // Parse JSON fields safely
+  const parsedResume = {
+    ...savedResume,
+    skills: safeParseJSON(savedResume.skills, []),
+    experience: safeParseJSON(savedResume.experience, []),
+    education: safeParseJSON(savedResume.education, []),
+    certifications: safeParseJSON(savedResume.certifications, [])
+  };
+
+  // Match resume with job description
+  const fullJobDescription = `${jobData.title}\n\n${jobData.description}\n\n${jobData.requirements || ''}`;
+  console.log(`🎯 Matching resume with job description...`);
+  const matchResults = await matchResumeWithJobDescription(
+    resumeText,
+    fullJobDescription,
+    parsedData
+  );
+
+  console.log(`📊 Match scores - Overall: ${matchResults.overall_match}%, Skills: ${matchResults.skills_match}%, Experience: ${matchResults.experience_match}%, Education: ${matchResults.education_match}%`);
+  
+  // Save evaluation
+  let evaluationData = null;
+  console.log(`💾 Saving evaluation to database...`);
+  try {
+    const evalResult = await query(
+      `INSERT INTO candidate_evaluations (
+        resume_id, job_description_id, candidate_name, contact_number, email,
+        resume_text, job_description, overall_match, skills_match, skills_details,
+        experience_match, experience_details, education_match, education_details,
+        status, rejection_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        parsedResume.id,
+        parseInt(jobData.id),
+        parsedData.name || null,
+        parsedData.phone || null,
+        normalizedEmail,
+        resumeText,
+        fullJobDescription,
+        matchResults.overall_match,
+        matchResults.skills_match,
+        matchResults.skills_details,
+        matchResults.experience_match,
+        matchResults.experience_details,
+        matchResults.education_match,
+        matchResults.education_details,
+        matchResults.status,
+        matchResults.rejection_reason || null
+      ]
+    );
+
+    evaluationData = await queryOne(
+      'SELECT * FROM candidate_evaluations WHERE id = ?',
+      [evalResult.insertId]
+    );
+    console.log(`✅ Evaluation saved (ID: ${evalResult.insertId})`);
+  } catch (evalError) {
+    console.error(`⚠️  Error saving evaluation:`, evalError.message);
+    // Don't fail the upload if evaluation fails, just log it
+  }
+
+  return {
+    success: true,
+    parsedResume,
+    versionNumber,
+    parentId,
+    evaluationData,
+    matchResults,
+    talygenUpload
+  };
+};
+
+
 // Single file upload (only HR and Admin can upload)
 router.post('/single', authenticate, requireWriteAccess, upload.single('resume'), handleMulterError, async (req, res) => {
   const startTime = Date.now();
@@ -249,151 +407,15 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
       return res.status(404).json({ error: 'Job description not found' });
     }
 
-    const filePath = req.file.path;
-    const fileName = req.file.originalname; // Original filename with extension
-    const mimetype = req.file.mimetype;
-
-    // Extract text from file
-    const resumeText = await extractTextFromFile(filePath, mimetype);
-
-    // Parse resume with Groq
-    const parsedData = await parseResumeWithGemini(resumeText, fileName);
-
-    // Normalize email to lowercase for consistency
-    const normalizedEmail = parsedData.email ? parsedData.email.toLowerCase().trim() : null;
-
-    // Check for duplicate resume and get versioning info
-    const originalResumeId = await findOriginalResume(parsedData);
-    let parentId = null;
-    let versionNumber = 1;
-
-    if (originalResumeId) {
-      // This is a duplicate - create a new version
-      parentId = originalResumeId;
-      versionNumber = await getNextVersionNumber(originalResumeId);
-      console.log(`📝 Duplicate detected! Creating version ${versionNumber} for candidate (Original ID: ${originalResumeId})`);
-    }
-
-    // Check if candidate has applied within the last 6 months
-    // if (normalizedEmail) {
-    //   const hasRecent = await hasRecentApplication(normalizedEmail);
-    //   if (hasRecent) {
-    //     // Clean up file before returning error
-    //     try {
-    //       await fsPromises.unlink(req.file.path);
-    //     } catch (e) {
-    //       // Ignore cleanup errors
-    //     }
-    //     return res.status(200).json({
-    //       error: 'This candidate has already applied within the last 6 months'
-    //     });
-    //   }
-    // }
-
-    // Ensure we preserve the original filename with extension for download
-    const originalFileName = fileName;
-
-    console.log(`💾 Saving resume to database...`);
-    // Save to MySQL with file path and version number
-    const result = await query(
-      `INSERT INTO resumes (
-        file_name, file_path, name, email, phone, location, 
-        skills, experience, education, summary, certifications, 
-        raw_text, total_experience, parent_id, version_number
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        originalFileName,
-        filePath,
-        parsedData.name || null,
-        normalizedEmail,
-        parsedData.phone || null,
-        parsedData.location || null,
-        JSON.stringify(parsedData.skills || []),
-        JSON.stringify(parsedData.experience || []),
-        JSON.stringify(parsedData.education || []),
-        parsedData.summary || null,
-        JSON.stringify(parsedData.certifications || []),
-        resumeText,
-        parsedData.total_experience ? parseFloat(parsedData.total_experience) : null,
-        parentId,
-        versionNumber
-      ]
-    );
-
-    const savedResume = await queryOne(
-      'SELECT * FROM resumes WHERE id = ?',
-      [result.insertId]
-    );
-    console.log(`✅ Resume saved to database (ID: ${result.insertId})`);
-
-    // Upload to Talygen API and store response (now with resume_id)
-    let talygenUpload = null;
-    try {
-      talygenUpload = await uploadToTalygen(filePath, fileName, mimetype, result.insertId);
-    } catch (talygenError) {
-      console.error(`⚠️  Talygen upload failed, continuing with resume processing:`, talygenError.message);
-    }
-
-    // Parse JSON fields safely
-    const parsedResume = {
-      ...savedResume,
-      skills: safeParseJSON(savedResume.skills, []),
-      experience: safeParseJSON(savedResume.experience, []),
-      education: safeParseJSON(savedResume.education, []),
-      certifications: safeParseJSON(savedResume.certifications, [])
-    };
-
-    // Match resume with job description
-    const fullJobDescription = `${jobData.title}\n\n${jobData.description}\n\n${jobData.requirements || ''}`;
-    console.log(`🎯 Matching resume with job description...`);
-    const matchResults = await matchResumeWithJobDescription(
-      resumeText,
-      fullJobDescription,
-      parsedData
-    );
-
-    console.log(`📊 Match scores - Overall: ${matchResults.overall_match}%, Skills: ${matchResults.skills_match}%, Experience: ${matchResults.experience_match}%, Education: ${matchResults.education_match}%`);
-    
-    // Save evaluation
-    let evaluationData = null;
-    console.log(`💾 Saving evaluation to database...`);
-    try {
-      const evalResult = await query(
-        `INSERT INTO candidate_evaluations (
-          resume_id, job_description_id, candidate_name, contact_number, email,
-          resume_text, job_description, overall_match, skills_match, skills_details,
-          experience_match, experience_details, education_match, education_details,
-          status, rejection_reason
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          parsedResume.id,
-          parseInt(job_description_id),
-          parsedData.name || null,
-          parsedData.phone || null,
-          normalizedEmail,
-          resumeText,
-          fullJobDescription,
-          matchResults.overall_match,
-          matchResults.skills_match,
-          matchResults.skills_details,
-          matchResults.experience_match,
-          matchResults.experience_details,
-          matchResults.education_match,
-          matchResults.education_details,
-          matchResults.status,
-          matchResults.rejection_reason || null
-        ]
-      );
-
-      evaluationData = await queryOne(
-        'SELECT * FROM candidate_evaluations WHERE id = ?',
-        [evalResult.insertId]
-      );
-      console.log(`✅ Evaluation saved (ID: ${evalResult.insertId})`);
-    } catch (evalError) {
-      console.error(`⚠️  Error saving evaluation:`, evalError.message);
-      // Don't fail the upload if evaluation fails, just log it
-    }
+    // Process resume using helper function
+    const {
+      parsedResume,
+      versionNumber,
+      parentId,
+      evaluationData,
+      matchResults,
+      talygenUpload
+    } = await processResumeFile(req.file, jobData);
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`✅ SUCCESS - Upload completed in ${totalTime}s`);
@@ -439,10 +461,9 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
     console.error('Error:', error.message);
     console.error('Stack:', error.stack);
     console.log(`==========================================\n`);
-    
     res.status(200).json({
-      error: 'Failed to process resume',
-      message: error.message
+      error: error.message,
+   
     });
   }
 });
@@ -503,7 +524,6 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
     }
 
     console.log(`✅ Job description found: "${jobData.title}"`);
-    const fullJobDescription = `${jobData.title}\n\n${jobData.description}\n\n${jobData.requirements || ''}`;
 
     const results = [];
     const errors = [];
@@ -512,7 +532,7 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
 
     for (let i = 0; i < req.files.length; i++) {
       const file = req.files[i];
-      const fileStartTime = Date.now(); // Define outside try block so it's available in catch
+      const fileStartTime = Date.now();
       
       // Add a small delay between files to avoid overwhelming the API (except for the first file)
       if (i > 0) {
@@ -522,164 +542,19 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
       try {
         console.log(`[${i + 1}/${req.files.length}] Processing: ${file.originalname}`);
         
-        const filePath = file.path;
-        const fileName = file.originalname;
-        const mimetype = file.mimetype;
-
-        console.log(`   📄 Extracting text from file...`);
-        // Extract text from file
-        const resumeText = await extractTextFromFile(filePath, mimetype);
-        console.log(`   ✅ Text extracted (${resumeText.length} characters)`);
-
-        console.log(`   🤖 Parsing resume with Groq AI...`);
-        // Parse resume with Groq
-        const parsedData = await parseResumeWithGemini(resumeText, fileName);
-        console.log(`   ✅ Resume parsed - Name: ${parsedData.name || 'N/A'}, Email: ${parsedData.email || 'N/A'}`);
-
-        // Normalize email to lowercase for consistency
-        const normalizedEmail = parsedData.email ? parsedData.email.toLowerCase().trim() : null;
-
-        console.log(`   🔍 Checking for duplicates...`);
-        // Check for duplicate resume and get versioning info
-        const originalResumeId = await findOriginalResume(parsedData);
-        let parentId = null;
-        let versionNumber = 1;
-
-        if (originalResumeId) {
-          // This is a duplicate - create a new version
-          parentId = originalResumeId;
-          versionNumber = await getNextVersionNumber(originalResumeId);
-          console.log(`   ⚠️  Duplicate detected! Creating version ${versionNumber} for candidate (Original ID: ${originalResumeId})`);
-        } else {
-          console.log(`   ✅ No duplicate found - creating new candidate record`);
-        }
-
-        // Check if candidate has applied within the last 6 months
-        if (normalizedEmail) {
-          const hasRecent = await hasRecentApplication(normalizedEmail);
-          if (hasRecent) {
-            // Clean up file before skipping
-            try {
-              await fsPromises.unlink(file.path);
-            } catch (e) {
-              // Ignore cleanup errors
-            }
-            console.log(`   ⚠️  Skipping ${file.originalname}: Candidate has already applied within the last 6 months`);
-            errors.push({
-              fileName: file.originalname,
-              error: 'This candidate has already applied within the last 6 months'
-            });
-            continue; // Skip to next file
-          }
-        }
-
-        // Ensure we preserve the original filename with extension
-        const originalFileName = fileName;
-
-        console.log(`   💾 Saving resume to database...`);
-        // Save to MySQL with file path and version number
-        const result = await query(
-          `INSERT INTO resumes (
-            file_name, file_path, name, email, phone, location, 
-            skills, experience, education, summary, certifications, 
-            raw_text, total_experience, parent_id, version_number
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            originalFileName,
-            filePath,
-            parsedData.name || null,
-            normalizedEmail,
-            parsedData.phone || null,
-            parsedData.location || null,
-            JSON.stringify(parsedData.skills || []),
-            JSON.stringify(parsedData.experience || []),
-            JSON.stringify(parsedData.education || []),
-            parsedData.summary || null,
-            JSON.stringify(parsedData.certifications || []),
-            resumeText,
-            parsedData.total_experience ? parseFloat(parsedData.total_experience) : null,
-            parentId,
-            versionNumber
-          ]
-        );
-
-        const savedResume = await queryOne(
-          'SELECT * FROM resumes WHERE id = ?',
-          [result.insertId]
-        );
-        console.log(`   ✅ Resume saved to database (ID: ${result.insertId})`);
-
-        // Upload to Talygen API and store response (now with resume_id)
-        let talygenUpload = null;
-        try {
-          talygenUpload = await uploadToTalygen(filePath, fileName, mimetype, result.insertId);
-        } catch (talygenError) {
-          console.error(`   ⚠️  Talygen upload failed, continuing with resume processing:`, talygenError.message);
-        }
-
-        // Parse JSON fields safely
-        const parsedResume = {
-          ...savedResume,
-          skills: safeParseJSON(savedResume.skills, []),
-          experience: safeParseJSON(savedResume.experience, []),
-          education: safeParseJSON(savedResume.education, []),
-          certifications: safeParseJSON(savedResume.certifications, [])
-        };
-
-        console.log(`   🎯 Matching resume with job description...`);
-        // Match resume with job description
-        const matchResults = await matchResumeWithJobDescription(
-          resumeText,
-          fullJobDescription,
-          parsedData
-        );
-
-        console.log(`   📊 Match scores - Overall: ${matchResults.overall_match}%, Skills: ${matchResults.skills_match}%, Experience: ${matchResults.experience_match}%, Education: ${matchResults.education_match}%`);
-        
-        // Save evaluation
-        let evaluationData = null;
-        console.log(`   💾 Saving evaluation to database...`);
-        try {
-          const evalResult = await query(
-            `INSERT INTO candidate_evaluations (
-              resume_id, job_description_id, candidate_name, contact_number, email,
-              resume_text, job_description, overall_match, skills_match, skills_details,
-              experience_match, experience_details, education_match, education_details,
-              status, rejection_reason
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              parsedResume.id,
-              parseInt(job_description_id),
-              parsedData.name || null,
-              parsedData.phone || null,
-              normalizedEmail,
-              resumeText,
-              fullJobDescription,
-              matchResults.overall_match,
-              matchResults.skills_match,
-              matchResults.skills_details,
-              matchResults.experience_match,
-              matchResults.experience_details,
-              matchResults.education_match,
-              matchResults.education_details,
-              matchResults.status,
-              matchResults.rejection_reason || null
-            ]
-          );
-
-          evaluationData = await queryOne(
-            'SELECT * FROM candidate_evaluations WHERE id = ?',
-            [evalResult.insertId]
-          );
-          console.log(`   ✅ Evaluation saved (ID: ${evalResult.insertId})`);
-        } catch (evalError) {
-          console.error(`   ⚠️  Error saving evaluation:`, evalError.message);
-          // Don't fail the upload if evaluation fails, just log it
-        }
+        // Use helper function to process resume
+        const {
+          parsedResume,
+          versionNumber,
+          parentId,
+          evaluationData,
+          matchResults,
+          talygenUpload
+        } = await processResumeFile(file, jobData);
 
         const fileProcessingTime = ((Date.now() - fileStartTime) / 1000).toFixed(2);
         results.push({
-          fileName: fileName,
+          fileName: file.originalname,
           success: true,
           data: {
             ...parsedResume,
@@ -704,7 +579,7 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
         });
         console.log(`   ✅ SUCCESS - Completed in ${fileProcessingTime}s\n`);
       } catch (error) {
-        const fileProcessingTime = fileStartTime ? ((Date.now() - fileStartTime) / 1000).toFixed(2) : 'N/A';
+        const fileProcessingTime = ((Date.now() - fileStartTime) / 1000).toFixed(2);
         console.error(`   ❌ ERROR processing ${file.originalname}:`, error.message);
         if (error.stack) {
           console.error(`   Stack:`, error.stack);
