@@ -628,10 +628,16 @@ router.get('/my-slots', authenticate, authorize('Interviewer'), async (req, res)
   try {
     const { from, to } = req.query;
 
-    let sql = `
-      SELECT * FROM interviewer_time_slots
-      WHERE interviewer_id = ?
-    `;
+    // let sql = `
+    //   SELECT * FROM interviewer_time_slots
+    //   WHERE interviewer_id = ?
+    // `;
+
+    let sql = `SELECT *
+FROM interviewer_time_slots
+WHERE interviewer_id = ?
+  AND start_time >= UTC_TIMESTAMP()
+`;
     const params = [req.user.id];
 
     if (from) {
