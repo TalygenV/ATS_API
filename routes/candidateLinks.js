@@ -485,21 +485,21 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
     const normalizedEmail = parsedData.email ? parsedData.email.toLowerCase().trim() : (link.candidate_email || null);
     
     // Check if candidate has applied within the last 6 months
-    if (normalizedEmail) {
-      const hasRecent = await hasRecentApplication(normalizedEmail);
-      if (hasRecent) {
-        // Clean up file before returning error
-        try {
-          await fs.unlink(filePath);
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-        return res.status(200).json({
-          success: false,
-          error: 'This candidate has already applied within the last 6 months'
-        });
-      }
-    }
+    // if (normalizedEmail) {
+    //   const hasRecent = await hasRecentApplication(normalizedEmail);
+    //   if (hasRecent) {
+    //     // Clean up file before returning error
+    //     try {
+    //       await fs.unlink(filePath);
+    //     } catch (e) {
+    //       // Ignore cleanup errors
+    //     }
+    //     return res.status(200).json({
+    //       success: false,
+    //       error: 'This candidate has already applied within the last 6 months'
+    //     });
+    //   }
+    // }
 
     // Check for duplicate resume and get versioning info
     const originalResumeId = await findOriginalResume(parsedData);
