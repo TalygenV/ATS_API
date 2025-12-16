@@ -214,106 +214,113 @@ router.get('/', authenticate, async (req, res) => {
     const joinCondition = isInterviewer ? ' AND ce.interviewer_id = ?' : '';
     if (isInterviewer) params.push(req.user.id);
 
-    const sql = `
-      WITH latest_resumes AS (
-        SELECT r1.id
-        FROM resumes r1
-        JOIN (
-          SELECT 
-            COALESCE(parent_id, id) AS root_id,
-            MAX(version_number) AS max_version
-          FROM resumes
-          GROUP BY COALESCE(parent_id, id)
-        ) x
-          ON x.root_id = COALESCE(r1.parent_id, r1.id)
-         AND x.max_version = r1.version_number
-      )
+   const sql = `
+WITH latest_resumes AS (
+  SELECT r1.id
+  FROM resumes r1
+  JOIN (
+    SELECT 
+      COALESCE(parent_id, id) AS root_id,
+      MAX(version_number) AS max_version
+    FROM resumes
+    GROUP BY COALESCE(parent_id, id)
+  ) x
+    ON x.root_id = COALESCE(r1.parent_id, r1.id)
+   AND x.max_version = r1.version_number
+)
 
-      SELECT 
-        jd.*,
+SELECT 
+  jd.*,
 
-        COUNT(DISTINCT lr.id) AS resume_count,
+  /* Total latest resumes */
+  COUNT(DISTINCT lr.id) AS resume_count,
 
-        COUNT(DISTINCT CASE 
-          WHEN lr.id IS NOT NULL AND ce.status = 'accepted'
-          THEN ce.email END
-        ) AS accepted,
+  /* Interviewer level status */
+  COUNT(DISTINCT CASE 
+    WHEN lr.id IS NOT NULL AND ce.status = 'accepted'
+    THEN ce.email END
+  ) AS accepted,
 
-        COUNT(DISTINCT CASE 
-          WHEN lr.id IS NOT NULL AND ce.status = 'pending'
-          THEN ce.email END
-        ) AS pending,
+  COUNT(DISTINCT CASE 
+    WHEN lr.id IS NOT NULL AND ce.status = 'pending'
+    THEN ce.email END
+  ) AS pending,
 
-        COUNT(DISTINCT CASE 
-          WHEN lr.id IS NOT NULL AND ce.status = 'rejected'
-          THEN ce.email END
-        ) AS rejected,
+  COUNT(DISTINCT CASE 
+    WHEN lr.id IS NOT NULL AND ce.status = 'rejected'
+    THEN ce.email END
+  ) AS rejected,
 
-     COUNT(DISTINCT CASE 
+  /* On Hold (HR overrides interviewer) */
+  COUNT(DISTINCT CASE 
+    WHEN lr.id IS NOT NULL
+     AND (
+          ce.interviewer_status IN ('on_hold','rejected')
+          OR ce.hr_final_status = 'on_hold'
+         )
+     AND ce.hr_final_status NOT IN ('selected','rejected')
+    THEN ce.email 
+  END) AS onhold,
+
+  /* HR Final Decisions */
+  COUNT(DISTINCT CASE 
+    WHEN lr.id IS NOT NULL AND ce.hr_final_status = 'rejected'
+    THEN ce.email END
+  ) AS finalRejected,
+
+  COUNT(DISTINCT CASE 
+    WHEN lr.id IS NOT NULL AND ce.hr_final_status = 'selected'
+    THEN ce.email END
+  ) AS finalSelected,
+
+  /* ✅ Decision Pending (NO TIME LOGIC) */
+  COUNT(DISTINCT CASE 
   WHEN lr.id IS NOT NULL
+   AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
    AND (
-        ce.interviewer_status IN ('on_hold' , 'rejected')
-        OR ce.hr_final_status = 'on_hold'
-       )
-   AND ce.hr_final_status NOT IN ('selected','rejected')
-  THEN ce.email 
-END) AS onhold,
-
-
-        COUNT(DISTINCT CASE 
-          WHEN lr.id IS NOT NULL AND ce.hr_final_status = 'rejected'
-          THEN ce.email END
-        ) AS finalRejected,
-
-        COUNT(DISTINCT CASE 
-          WHEN lr.id IS NOT NULL AND ce.hr_final_status = 'selected'
-          THEN ce.email END
-        ) AS finalSelected,
-
-          COUNT(DISTINCT CASE 
-  WHEN lr.id IS NOT NULL
-   AND ce.hr_final_status NOT IN ('selected','rejected' , 'on_hold' )
-   AND (
-     -- Interviewer has selected but interview hasn't happened yet (or happened within 45 min)
-     (ce.interviewer_status IN ('selected') 
-      AND (ce.interview_date IS NULL 
-           OR ce.interview_date <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 45 MINUTE)))
-     OR 
-     -- Interview has passed or is very soon (within 45 min) and feedback is pending
-     (ce.interview_date IS NOT NULL 
-      AND ce.interview_date <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 45 MINUTE)
-      AND ce.interviewer_feedback IS NULL)
+     ce.interviewer_status = 'selected'
+     OR (
+       ce.interview_date IS NOT NULL
+       AND ce.interviewer_feedback IS NULL
+     )
    )
-   -- Exclude candidates with future interviews (those go to scheduledInterview)
-   AND NOT (ce.interview_date IS NOT NULL 
-            AND ce.interview_date > DATE_ADD(UTC_TIMESTAMP(), INTERVAL 45 MINUTE))
+   AND NOT (
+     ce.interview_date IS NOT NULL
+     AND ce.interviewer_feedback IS NULL
+     AND ce.interviewer_status != 'selected'
+   )
   THEN ce.email 
-END)  AS totalDecisionPending,
-            COUNT(DISTINCT CASE 
-          WHEN lr.id IS NOT NULL AND ce.interviewer_id IS NULL
-          THEN ce.email END
-        ) AS totalPending,
+END) AS totalDecisionPending,
 
-        COUNT(DISTINCT CASE 
-          WHEN lr.id IS NOT NULL
-           AND ce.interviewer_id IS NOT NULL
-           AND ce.interview_date IS NOT NULL
-           AND ce.interviewer_feedback IS NULL
-           AND ce.interview_date > DATE_ADD(UTC_TIMESTAMP(), INTERVAL 45 MINUTE)
-           AND ce.hr_final_status NOT IN ('selected','rejected' , 'on_hold' )
-          THEN ce.email END
-        ) AS scheduledInterview
 
-      FROM job_descriptions jd
-      LEFT JOIN candidate_evaluations ce
-        ON ce.job_description_id = jd.id
-        ${joinCondition}
-      LEFT JOIN latest_resumes lr
-        ON lr.id = ce.resume_id
+  /* Not assigned to interviewer */
+  COUNT(DISTINCT CASE 
+    WHEN lr.id IS NOT NULL AND ce.interviewer_id IS NULL
+    THEN ce.email END
+  ) AS totalPending,
 
-      GROUP BY jd.id
-      ORDER BY jd.created_at DESC
-    `;
+  /* Scheduled interview (future + no feedback) */
+  COUNT(DISTINCT CASE 
+    WHEN lr.id IS NOT NULL
+     AND ce.interviewer_id IS NOT NULL
+     AND ce.interview_date IS NOT NULL
+     AND ce.interviewer_feedback IS NULL
+     AND ce.interview_date > DATE_ADD(UTC_TIMESTAMP(), INTERVAL 45 MINUTE)
+     AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
+    THEN ce.email END
+  ) AS scheduledInterview
+
+FROM job_descriptions jd
+LEFT JOIN candidate_evaluations ce
+  ON ce.job_description_id = jd.id
+  ${joinCondition}
+LEFT JOIN latest_resumes lr
+  ON lr.id = ce.resume_id
+
+GROUP BY jd.id
+ORDER BY jd.created_at DESC
+`;
+
 
     const rows = await query(sql, params);
 

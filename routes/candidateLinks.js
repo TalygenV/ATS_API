@@ -7,7 +7,7 @@ const { query, queryOne } = require('../config/database');
 const { generateQuestionsFromJD } = require('../utils/questionGenerator');
 const { extractTextFromFile, parseResumeWithGemini } = require('../utils/resumeParser');
 const { matchResumeWithJobDescriptionAndQA } = require('../utils/resumeMatcher');
-const { hasRecentApplication } = require('../utils/applicationValidator');
+const { hasRecentApplication , alreadyAssignInterView } = require('../utils/applicationValidator');
 const { findOriginalResume, getNextVersionNumber } = require('../utils/duplicateChecker');
 const { sendEmail, sendInterviewAssignmentToInterviewer, sendInterviewAssignmentToCandidate } = require('../utils/emailService');
 const { toUTCString, fromUTCString, getCurrentUTCString, convertResultToUTC } = require('../utils/datetimeUtils');
@@ -504,21 +504,38 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
     const normalizedEmail = parsedData.email ? parsedData.email.toLowerCase().trim() : (link.candidate_email || null);
     
     // Check if candidate has applied within the last 6 months
-    // if (normalizedEmail) {
-    //   const hasRecent = await hasRecentApplication(normalizedEmail);
-    //   if (hasRecent) {
-    //     // Clean up file before returning error
-    //     try {
-    //       await fs.unlink(filePath);
-    //     } catch (e) {
-    //       // Ignore cleanup errors
-    //     }
-    //     return res.status(200).json({
-    //       success: false,
-    //       error: 'This candidate has already applied within the last 6 months'
-    //     });
-    //   }
-    // }
+    if (normalizedEmail) {
+      // const hasRecent = await hasRecentApplication(normalizedEmail);
+      // if (hasRecent) {
+      //   // Clean up file before returning error
+      //   try {
+      //     await fs.unlink(filePath);
+      //   } catch (e) {
+      //     // Ignore cleanup errors
+      //   }
+      //   return res.status(200).json({
+      //     success: false,
+      //     error: 'This candidate has already applied within the last 6 months'
+      //   });
+      // }
+
+      const hasInterview = await alreadyAssignInterView(normalizedEmail);
+    
+
+     if (hasInterview) {
+      // Clean up file before throwing error
+      try {
+        await fsPromises.unlink(filePath);
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      return res.status(200).json({
+          success: false,
+          error: 'Candidate interview is already scheduled '
+        });
+
+    }
+    }
 
     // Check for duplicate resume and get versioning info
     const originalResumeId = await findOriginalResume(parsedData);
