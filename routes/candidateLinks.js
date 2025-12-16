@@ -10,6 +10,7 @@ const { matchResumeWithJobDescriptionAndQA } = require('../utils/resumeMatcher')
 const { hasRecentApplication } = require('../utils/applicationValidator');
 const { findOriginalResume, getNextVersionNumber } = require('../utils/duplicateChecker');
 const { sendEmail, sendInterviewAssignmentToInterviewer, sendInterviewAssignmentToCandidate } = require('../utils/emailService');
+const { toUTCString, fromUTCString, getCurrentUTCString, convertResultToUTC } = require('../utils/datetimeUtils');
 
 const router = express.Router();
 
@@ -106,15 +107,17 @@ router.post('/generate', async (req, res) => {
         }
       }
 
+      const linkData = {
+        id: existingLink.id,
+        token: existingLink.token,
+        url: candidateUrl,
+        questions: questions
+      };
+      
       return res.json({
         success: true,
         message: 'Existing candidate link retrieved',
-        data: {
-          id: existingLink.id,
-          token: existingLink.token,
-          url: candidateUrl,
-          questions: questions
-        }
+        data: convertResultToUTC(linkData)
       });
     }
 
@@ -166,8 +169,8 @@ router.post('/generate', async (req, res) => {
       const days = parseInt(expires_in_days, 10);
       if (!isNaN(days) && days > 0) {
         const now = new Date();
-        now.setDate(now.getDate() + days);
-        expiresAt = now.toISOString().slice(0, 19).replace('T', ' ');
+        now.setUTCDate(now.getUTCDate() + days);
+        expiresAt = toUTCString(now);
       }
     }
 
@@ -260,13 +263,17 @@ router.get('/job/:job_description_id', async (req, res) => {
       });
     }
 
-    // Check if link has expired
-    if (link.expires_at && new Date(link.expires_at) < new Date()) {
-      return res.json({
-        success: true,
-        data: null,
-        message: 'Link has expired'
-      });
+    // Check if link has expired (using UTC comparison)
+    if (link.expires_at) {
+      const expiresAt = fromUTCString(link.expires_at);
+      const now = new Date();
+      if (expiresAt && expiresAt < now) {
+        return res.json({
+          success: true,
+          data: null,
+          message: 'Link has expired'
+        });
+      }
     }
 
     let questions = [];
@@ -299,16 +306,18 @@ router.get('/job/:job_description_id', async (req, res) => {
       ? `${frontendBaseUrl.replace(/\/$/, '')}/candidate/${link.token}`
       : `/candidate/${link.token}`;
 
+    const linkData = {
+      id: link.id,
+      token: link.token,
+      url: candidateUrl,
+      status: link.status,
+      job,
+      questions
+    };
+
     res.json({
       success: true,
-      data: {
-        id: link.id,
-        token: link.token,
-        url: candidateUrl,
-        status: link.status,
-        job,
-        questions
-      }
+      data: convertResultToUTC(linkData)
     });
   } catch (error) {
     console.error('Error fetching candidate link by job ID:', error);
@@ -348,16 +357,20 @@ router.get('/:token', async (req, res) => {
       });
     }
 
-    if (link.expires_at && new Date(link.expires_at) < new Date()) {
-      // Automatically expire
-      await query(
-        'UPDATE candidate_links SET status = "expired" WHERE id = ?',
-        [link.id]
-      );
-      return res.status(410).json({
-        success: false,
-        error: 'This link has expired'
-      });
+    if (link.expires_at) {
+      const expiresAt = fromUTCString(link.expires_at);
+      const now = new Date();
+      if (expiresAt && expiresAt < now) {
+        // Automatically expire
+        await query(
+          'UPDATE candidate_links SET status = "expired" WHERE id = ?',
+          [link.id]
+        );
+        return res.status(410).json({
+          success: false,
+          error: 'This link has expired'
+        });
+      }
     }
 
     let questions = [];
@@ -387,17 +400,19 @@ router.get('/:token', async (req, res) => {
     }
     const job = link.job ? JSON.parse(link.job) : null;
 
+    const linkData = {
+      id: link.id,
+      token: link.token,
+      status: link.status,
+      candidate_name: link.candidate_name,
+      candidate_email: link.candidate_email,
+      job,
+      questions
+    };
+
     res.json({
       success: true,
-      data: {
-        id: link.id,
-        token: link.token,
-        status: link.status,
-        candidate_name: link.candidate_name,
-        candidate_email: link.candidate_email,
-        job,
-        questions
-      }
+      data: convertResultToUTC(linkData)
     });
   } catch (error) {
     console.error('Error fetching candidate link:', error);
@@ -444,15 +459,19 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
       });
     }
 
-    if (link.expires_at && new Date(link.expires_at) < new Date()) {
-      await query(
-        'UPDATE candidate_links SET status = "expired" WHERE id = ?',
-        [link.id]
-      );
-      return res.status(200).json({
-        success: false,
-        error: 'This link has expired'
-      });
+    if (link.expires_at) {
+      const expiresAt = fromUTCString(link.expires_at);
+      const now = new Date();
+      if (expiresAt && expiresAt < now) {
+        await query(
+          'UPDATE candidate_links SET status = "expired" WHERE id = ?',
+          [link.id]
+        );
+        return res.status(200).json({
+          success: false,
+          error: 'This link has expired'
+        });
+      }
     }
 
     const job = await queryOne(
@@ -601,17 +620,20 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
            FROM interviewer_time_slots s
            LEFT JOIN users u ON s.interviewer_id = u.id
            WHERE s.is_booked = 0
-             AND s.start_time > NOW()
+             AND s.start_time > UTC_TIMESTAMP()
              AND s.interviewer_id IN (${placeholders})
              AND (s.job_description_id IS NULL OR s.job_description_id = ?)
            ORDER BY s.start_time ASC`,
           params
         );
 
-        availableSlots = rows.map(row => ({
-          ...row,
-          interviewer: row.interviewer ? JSON.parse(row.interviewer) : null
-        }));
+        availableSlots = rows.map(row => {
+          const slot = {
+            ...row,
+            interviewer: row.interviewer ? JSON.parse(row.interviewer) : null
+          };
+          return convertResultToUTC(slot);
+        });
       }
     }
 
@@ -627,19 +649,21 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`Candidate evaluation via link completed in ${totalTime}s (ID: ${evaluationId})`);
 
+    const responseData = {
+      evaluation_id: evaluationId,
+      overall_match: matchResults.overall_match,
+      skills_match: matchResults.skills_match,
+      experience_match: matchResults.experience_match,
+      education_match: matchResults.education_match,
+      status: matchResults.status,
+      rejection_reason: matchResults.rejection_reason || null,
+      can_select_slot: matchResults.overall_match >= 70,
+      available_slots: availableSlots
+    };
+
     res.json({
       success: true,
-      data: {
-        evaluation_id: evaluationId,
-        overall_match: matchResults.overall_match,
-        skills_match: matchResults.skills_match,
-        experience_match: matchResults.experience_match,
-        education_match: matchResults.education_match,
-        status: matchResults.status,
-        rejection_reason: matchResults.rejection_reason || null,
-        can_select_slot: matchResults.overall_match >= 70,
-        available_slots: availableSlots
-      }
+      data: convertResultToUTC(responseData)
     });
   } catch (error) {
     if (filePath) {
@@ -684,12 +708,16 @@ router.post('/:token/book-slot', async (req, res) => {
       });
     }
 
-    // Check if link has expired
-    if (link.expires_at && new Date(link.expires_at) < new Date()) {
-      return res.status(410).json({
-        success: false,
-        error: 'This link has expired'
-      });
+    // Check if link has expired (using UTC comparison)
+    if (link.expires_at) {
+      const expiresAt = fromUTCString(link.expires_at);
+      const now = new Date();
+      if (expiresAt && expiresAt < now) {
+        return res.status(410).json({
+          success: false,
+          error: 'This link has expired'
+        });
+      }
     }
 
     const evaluation = await queryOne(
@@ -764,12 +792,13 @@ router.post('/:token/book-slot', async (req, res) => {
       });
     }
 
-    // Update evaluation with interviewer and interview date
+    // Update evaluation with interviewer and interview date (convert to UTC)
+    const interviewDateUTC = toUTCString(slot.start_time);
     await query(
       `UPDATE candidate_evaluations
        SET interviewer_id = ?, interview_date = ?, interviewer_status = 'pending'
        WHERE id = ?`,
-      [slot.interviewer_id, slot.start_time, evaluation_id]
+      [slot.interviewer_id, interviewDateUTC, evaluation_id]
     );
 
     // Determine a system user to record assignment (first Admin or HR)
@@ -778,10 +807,11 @@ router.post('/:token/book-slot', async (req, res) => {
     );
 
     if (systemUser) {
+      const assignmentDateUTC = toUTCString(slot.start_time);
       await query(
         `INSERT INTO interview_assignments (evaluation_id, interviewer_id, interview_date, assigned_by, notes)
          VALUES (?, ?, ?, ?, ?)`,
-        [evaluation_id, slot.interviewer_id, slot.start_time, systemUser.id, 'Candidate self-scheduled']
+        [evaluation_id, slot.interviewer_id, assignmentDateUTC, systemUser.id, 'Candidate self-scheduled']
       );
     }
 
@@ -797,7 +827,7 @@ router.post('/:token/book-slot', async (req, res) => {
         candidateName,
         candidateEmail,
         jobTitle,
-        interviewDate: slot.start_time
+        interviewDate: toUTCString(slot.start_time)
       });
     }
 
@@ -807,7 +837,7 @@ router.post('/:token/book-slot', async (req, res) => {
         candidateEmail,
         candidateName,
         jobTitle,
-        interviewDate: slot.start_time,
+        interviewDate: toUTCString(slot.start_time),
         interviewerName: slot.interviewer_name || slot.interviewer_email
       });
     }
@@ -831,7 +861,7 @@ router.post('/:token/book-slot', async (req, res) => {
               <li><strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}</li>
               <li><strong>Job Position:</strong> ${jobTitle}</li>
               <li><strong>Interviewer:</strong> ${slot.interviewer_name || slot.interviewer_email}</li>
-              <li><strong>Date & Time:</strong> ${new Date(slot.start_time).toLocaleString('en-US')}</li>
+              <li><strong>Date & Time:</strong> ${fromUTCString(slot.start_time) ? fromUTCString(slot.start_time).toLocaleString('en-US') : 'N/A'}</li>
             </ul>
           </body>
           </html>

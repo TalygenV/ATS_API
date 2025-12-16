@@ -7,6 +7,7 @@ const { authenticate, requireWriteAccess, authorize } = require('../middleware/a
 const { sendInterviewFeedbackToHR } = require('../utils/emailService');
 const { extractTextFromFile, parseResumeWithGemini } = require('../utils/resumeParser');
 const { matchResumeWithJobDescriptionAndQA } = require('../utils/resumeMatcher');
+const { convertResultToUTC, fromUTCString } = require('../utils/datetimeUtils');
 
 const router = express.Router();
 
@@ -152,7 +153,7 @@ router.get('/', authenticate, async (req, res) => {
 
     const evaluations = await query(sql, params);
 
-    // Parse JSON fields safely
+    // Parse JSON fields safely and convert datetime to UTC
     const parsedEvaluations = evaluations.map(eval => {
       const parsed = {
         ...eval,
@@ -167,7 +168,7 @@ router.get('/', authenticate, async (req, res) => {
         parsed.resume.experience = safeParseJSON(parsed.resume.experience, []);
         parsed.resume.education = safeParseJSON(parsed.resume.education, []);
       }
-      return parsed;
+      return convertResultToUTC(parsed);
     });
 
     res.json({
@@ -382,6 +383,9 @@ router.get('/:id', authenticate, async (req, res) => {
       parsedEvaluation.resume.education = safeParseJSON(parsedEvaluation.resume.education, []);
     }
     
+    // Convert datetime fields to UTC
+    const convertedEvaluation = convertResultToUTC(parsedEvaluation);
+    
     console.log('Fetched evaluation:', {
       id: parsedEvaluation.id,
       resume_id: parsedEvaluation.resume_id,
@@ -391,7 +395,7 @@ router.get('/:id', authenticate, async (req, res) => {
 
     res.json({
       success: true,
-      data: parsedEvaluation
+      data: convertedEvaluation
     });
   } catch (error) {
     console.error('Error fetching evaluation:', error);
@@ -565,10 +569,13 @@ router.post('/:id/interviewer-feedback', authenticate, authorize('Interviewer'),
         : null
     };
 
+    // Convert datetime fields to UTC
+    const convertedEvaluation = convertResultToUTC(parsedEvaluation);
+
     res.json({
       success: true,
       message: 'Interview feedback submitted successfully',
-      data: parsedEvaluation
+      data: convertedEvaluation
     });
   } catch (error) {
     console.error('Error submitting interviewer feedback:', error);
@@ -679,10 +686,13 @@ router.post('/:id/hr-decision', authenticate, requireWriteAccess, async (req, re
         : null
     };
 
+    // Convert datetime fields to UTC
+    const convertedEvaluation = convertResultToUTC(parsedEvaluation);
+
     res.json({
       success: true,
       message: 'Final decision updated successfully',
-      data: parsedEvaluation
+      data: convertedEvaluation
     });
   } catch (error) {
     console.error('Error updating HR final decision:', error);
@@ -853,7 +863,7 @@ if (req.user.role === 'Interviewer') {
         parsed.resume.experience = safeParseJSON(parsed.resume.experience, []);
         parsed.resume.education = safeParseJSON(parsed.resume.education, []);
       }
-      return parsed;
+      return convertResultToUTC(parsed);
     });
     const isInterviewer = req.user.role === 'Interviewer';
 const interviewerId = req.user.id;
@@ -910,9 +920,9 @@ const interviewerId = req.user.id;
              return versionB - versionA; // Higher version first
               // return versionA - versionB; // Higher version first
             }
-            // If versions are equal, sort by resume created_at DESC
-            const resumeDateA = new Date(a.resume?.created_at || a.created_at || 0);
-            const resumeDateB = new Date(b.resume?.created_at || b.created_at || 0);
+            // If versions are equal, sort by resume created_at DESC (using UTC)
+            const resumeDateA = fromUTCString(a.resume?.created_at || a.created_at) || new Date(0);
+            const resumeDateB = fromUTCString(b.resume?.created_at || b.created_at) || new Date(0);
             return resumeDateB - resumeDateA;
             // return resumeDateA - resumeDateB;
           });
@@ -1117,13 +1127,13 @@ router.get('/:id/timeline', authenticate, async (req, res) => {
       timeline.push({
         type: 'interview_scheduled',
         title: 'Interview Scheduled',
-        description: `Interview scheduled for ${new Date(assignment.interview_date).toLocaleString('en-US', {
+        description: `Interview scheduled for ${fromUTCString(assignment.interview_date) ? fromUTCString(assignment.interview_date).toLocaleString('en-US', {
           year: 'numeric',
           month: 'long',
           day: 'numeric',
           hour: '2-digit',
           minute: '2-digit'
-        })}`,
+        }) : 'N/A'}`,
         timestamp: assignment.interview_date,
         user: null,
         details: {
@@ -1172,8 +1182,22 @@ router.get('/:id/timeline', authenticate, async (req, res) => {
       });
     }
 
-    // Sort timeline by timestamp
-    timeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    // Sort timeline by timestamp (using UTC)
+    timeline.sort((a, b) => {
+      const dateA = fromUTCString(a.timestamp) || new Date(0);
+      const dateB = fromUTCString(b.timestamp) || new Date(0);
+      return dateA - dateB;
+    });
+    
+    // Convert timeline timestamps to UTC ISO strings
+    timeline.forEach(item => {
+      if (item.timestamp) {
+        const dateObj = fromUTCString(item.timestamp);
+        if (dateObj) {
+          item.timestamp = dateObj.toISOString();
+        }
+      }
+    });
 
     res.json({
       success: true,

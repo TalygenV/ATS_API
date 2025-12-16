@@ -2,6 +2,7 @@ const express = require('express');
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
 const { generateQuestionsFromJD } = require('../utils/questionGenerator');
+const { convertResultToUTC } = require('../utils/datetimeUtils');
 
 const router = express.Router();
 
@@ -271,12 +272,21 @@ END) AS onhold,
 
           COUNT(DISTINCT CASE 
   WHEN lr.id IS NOT NULL
-   AND ( ce.interviewer_status IN ('selected') OR         ( ce.interview_date <= DATE_ADD(
-  CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+05:30'),
-  INTERVAL 45 MINUTE
-) AND ce.interviewer_feedback IS NULL) )
-
    AND ce.hr_final_status NOT IN ('selected','rejected' , 'on_hold' )
+   AND (
+     -- Interviewer has selected but interview hasn't happened yet (or happened within 45 min)
+     (ce.interviewer_status IN ('selected') 
+      AND (ce.interview_date IS NULL 
+           OR ce.interview_date <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 45 MINUTE)))
+     OR 
+     -- Interview has passed or is very soon (within 45 min) and feedback is pending
+     (ce.interview_date IS NOT NULL 
+      AND ce.interview_date <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 45 MINUTE)
+      AND ce.interviewer_feedback IS NULL)
+   )
+   -- Exclude candidates with future interviews (those go to scheduledInterview)
+   AND NOT (ce.interview_date IS NOT NULL 
+            AND ce.interview_date > DATE_ADD(UTC_TIMESTAMP(), INTERVAL 45 MINUTE))
   THEN ce.email 
 END)  AS totalDecisionPending,
             COUNT(DISTINCT CASE 
@@ -287,12 +297,10 @@ END)  AS totalDecisionPending,
         COUNT(DISTINCT CASE 
           WHEN lr.id IS NOT NULL
            AND ce.interviewer_id IS NOT NULL
+           AND ce.interview_date IS NOT NULL
            AND ce.interviewer_feedback IS NULL
-           AND 
-           ce.interview_date >= DATE_ADD(
-  CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+05:30'),
-  INTERVAL 45 MINUTE
-)
+           AND ce.interview_date > DATE_ADD(UTC_TIMESTAMP(), INTERVAL 45 MINUTE)
+           AND ce.hr_final_status NOT IN ('selected','rejected' , 'on_hold' )
           THEN ce.email END
         ) AS scheduledInterview
 
@@ -308,13 +316,15 @@ END)  AS totalDecisionPending,
     `;
 
     const rows = await query(sql, params);
-    // ce.interview_date >= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 45 MINUTE)
 
-    const parsedJobDescriptions = rows.map(jd => ({
-      ...jd,
-      interviewers: jd.interviewers ? JSON.parse(jd.interviewers) : [],
-      resume_count: Number(jd.resume_count) || 0
-    }));
+    const parsedJobDescriptions = rows.map(jd => {
+      const parsed = {
+        ...jd,
+        interviewers: jd.interviewers ? JSON.parse(jd.interviewers) : [],
+        resume_count: Number(jd.resume_count) || 0
+      };
+      return convertResultToUTC(parsed);
+    });
 
     res.json({
       success: true,
@@ -348,7 +358,7 @@ router.get('/:id', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Job description not found' });
     }
 
-    // Parse JSON fields
+    // Parse JSON fields and convert datetime to UTC
     const parsedJobDescription = {
       ...jobDescription,
       interviewers: jobDescription.interviewers ? JSON.parse(jobDescription.interviewers) : []
@@ -356,7 +366,7 @@ router.get('/:id', authenticate, async (req, res) => {
 
     res.json({
       success: true,
-      data: parsedJobDescription
+      data: convertResultToUTC(parsedJobDescription)
     });
   } catch (error) {
     console.error('Error fetching job description:', error);
@@ -412,7 +422,7 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
       [result.insertId]
     );
 
-    // Parse JSON fields
+    // Parse JSON fields and convert datetime to UTC
     const parsedJobDescription = {
       ...jobDescription,
       interviewers: jobDescription.interviewers ? JSON.parse(jobDescription.interviewers) : []
@@ -421,7 +431,7 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
     res.json({
       success: true,
       message: 'Job description created successfully',
-      data: parsedJobDescription
+      data: convertResultToUTC(parsedJobDescription)
     });
   } catch (error) {
     console.error('Error creating job description:', error);
@@ -498,7 +508,7 @@ router.put('/:id', authenticate, requireWriteAccess, async (req, res) => {
       [id]
     );
 
-    // Parse JSON fields
+    // Parse JSON fields and convert datetime to UTC
     const parsedJobDescription = {
       ...jobDescription,
       interviewers: jobDescription.interviewers ? JSON.parse(jobDescription.interviewers) : []
@@ -507,7 +517,7 @@ router.put('/:id', authenticate, requireWriteAccess, async (req, res) => {
     res.json({
       success: true,
       message: 'Job description updated successfully',
-      data: parsedJobDescription
+      data: convertResultToUTC(parsedJobDescription)
     });
   } catch (error) {
     console.error('Error updating job description:', error);

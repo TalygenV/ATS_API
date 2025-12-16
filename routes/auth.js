@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireAdmin, requireWriteAccess } = require('../middleware/auth');
+const { convertResultToUTC } = require('../utils/datetimeUtils');
 
 const router = express.Router();
 
@@ -232,7 +233,7 @@ router.get('/users', authenticate, requireWriteAccess, async (req, res) => {
     res.json({
       success: true,
       count: users.length,
-      data: users
+      data: convertResultToUTC(users)
     });
   } catch (error) {
     console.error('Error fetching users:', error);

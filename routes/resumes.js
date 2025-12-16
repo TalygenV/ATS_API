@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
+const { convertResultToUTC } = require('../utils/datetimeUtils');
 
 const router = express.Router();
 
@@ -64,7 +65,7 @@ router.get('/:id', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Resume not found' });
     }
 
-    // Parse JSON fields safely
+    // Parse JSON fields safely and convert datetime to UTC
     const parsedResume = {
       ...resume,
       skills: safeParseJSON(resume.skills, []),
@@ -75,7 +76,7 @@ router.get('/:id', authenticate, async (req, res) => {
 
     res.json({
       success: true,
-      data: parsedResume
+      data: convertResultToUTC(parsedResume)
     });
   } catch (error) {
     console.error('Error fetching resume:', error);
@@ -99,14 +100,17 @@ router.get('/search/:query', authenticate, async (req, res) => {
       [searchTerm, searchTerm, searchTerm]
     );
 
-    // Parse JSON fields
-    const parsedResumes = resumes.map(resume => ({
-      ...resume,
-      skills: resume.skills ? JSON.parse(resume.skills) : [],
-      experience: resume.experience ? JSON.parse(resume.experience) : [],
-      education: resume.education ? JSON.parse(resume.education) : [],
-      certifications: resume.certifications ? JSON.parse(resume.certifications) : []
-    }));
+    // Parse JSON fields and convert datetime to UTC
+    const parsedResumes = resumes.map(resume => {
+      const parsed = {
+        ...resume,
+        skills: resume.skills ? JSON.parse(resume.skills) : [],
+        experience: resume.experience ? JSON.parse(resume.experience) : [],
+        education: resume.education ? JSON.parse(resume.education) : [],
+        certifications: resume.certifications ? JSON.parse(resume.certifications) : []
+      };
+      return convertResultToUTC(parsed);
+    });
 
     res.json({
       success: true,
@@ -281,11 +285,14 @@ router.get('/:id/versions', authenticate, async (req, res) => {
       }
     }));
 
+    // Convert datetime fields to UTC
+    const convertedVersions = parsedVersions.map(v => convertResultToUTC(v));
+
     res.json({
       success: true,
       original_resume_id: originalResumeId,
-      total_versions: parsedVersions.length,
-      data: parsedVersions.map(v => ({
+      total_versions: convertedVersions.length,
+      data: convertedVersions.map(v => ({
         version: v.version_number,
         uploaded_on: v.created_at,
         resume_id: v.id,
@@ -339,14 +346,17 @@ router.get('/new/new-resumes', authenticate, async (req, res) => {
       'SELECT * FROM resumes where parent_id is null AND DATE(created_at) > utc_date() - INTERVAL 5 DAY ORDER BY created_at DESC LIMIT 4'
     );
 
-    // Parse JSON fields
-    const parsedResumes = resumes.map(resume => ({
-      ...resume,
-      skills: resume.skills ? JSON.parse(resume.skills) : [],
-      experience: resume.experience ? JSON.parse(resume.experience) : [],
-      education: resume.education ? JSON.parse(resume.education) : [],
-      certifications: resume.certifications ? JSON.parse(resume.certifications) : []
-    }));
+    // Parse JSON fields and convert datetime to UTC
+    const parsedResumes = resumes.map(resume => {
+      const parsed = {
+        ...resume,
+        skills: resume.skills ? JSON.parse(resume.skills) : [],
+        experience: resume.experience ? JSON.parse(resume.experience) : [],
+        education: resume.education ? JSON.parse(resume.education) : [],
+        certifications: resume.certifications ? JSON.parse(resume.certifications) : []
+      };
+      return convertResultToUTC(parsed);
+    });
 
     res.json({
       success: true,

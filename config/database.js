@@ -14,6 +14,7 @@ const dbConfig = {
   connectionLimit: 10,
   queueLimit: 0,
   charset: 'utf8mb4',
+  timezone: '+00:00', // Set timezone to UTC
   connectTimeout: 60000, // 60 seconds
   acquireTimeout: 60000, // 60 seconds
   timeout: 60000, // 60 seconds
@@ -41,6 +42,15 @@ const dbConfig = {
 
 // Create connection pool
 const pool = mysql.createPool(dbConfig);
+
+// Set timezone to UTC for all connections
+pool.on('connection', (connection) => {
+  connection.query("SET time_zone = '+00:00'", (err) => {
+    if (err) {
+      console.error('Error setting timezone to UTC:', err);
+    }
+  });
+});
 
 // Test connection with retry
 const testConnection = async (retries = 3, delay = 2000) => {

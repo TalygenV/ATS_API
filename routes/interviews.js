@@ -6,6 +6,7 @@ const {
   sendInterviewAssignmentToInterviewer,
   sendInterviewAssignmentToCandidate
 } = require('../utils/emailService');
+const { toUTCString, fromUTCString, convertResultToUTC } = require('../utils/datetimeUtils');
 
 const router = express.Router();
 
@@ -80,19 +81,20 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
       finalInterviewDate = slot.start_time;
     }
 
-    // Update evaluation with interviewer assignment
+    // Update evaluation with interviewer assignment (convert to UTC)
+    const interviewDateUTC = toUTCString(finalInterviewDate);
     await query(
       `UPDATE candidate_evaluations 
        SET interviewer_id = ?, interview_date = ?, interviewer_status = 'pending'
        WHERE id = ?`,
-      [interviewer_id, finalInterviewDate, evaluation_id]
+      [interviewer_id, interviewDateUTC, evaluation_id]
     );
 
-    // Create assignment record
+    // Create assignment record (convert to UTC)
     await query(
       `INSERT INTO interview_assignments (evaluation_id, interviewer_id, interview_date, assigned_by, notes)
        VALUES (?, ?, ?, ?, ?)`,
-      [evaluation_id, interviewer_id, finalInterviewDate, req.user.id, null]
+      [evaluation_id, interviewer_id, interviewDateUTC, req.user.id, null]
     );
 
     // Send email notifications
@@ -108,7 +110,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
         candidateName,
         candidateEmail,
         jobTitle,
-        interviewDate: finalInterviewDate
+        interviewDate: interviewDateUTC
       });
     }
 
@@ -118,7 +120,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
         candidateEmail,
         candidateName,
         jobTitle,
-        interviewDate: finalInterviewDate,
+        interviewDate: interviewDateUTC,
         interviewerName: interviewer.full_name || interviewer.email
       });
     }
@@ -141,6 +143,9 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
       ...updatedEvaluation,
       interviewer: updatedEvaluation.interviewer ? JSON.parse(updatedEvaluation.interviewer) : null
     };
+    
+    // Convert datetime fields to UTC
+    const convertedEvaluation = convertResultToUTC(parsedEvaluation);
 
     // Notify HR/Admin about scheduled interview
     try {
@@ -162,7 +167,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
               <li><strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}</li>
               <li><strong>Job Position:</strong> ${jobTitle}</li>
               <li><strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}</li>
-              <li><strong>Date & Time:</strong> ${new Date(finalInterviewDate).toLocaleString('en-US')}</li>
+              <li><strong>Date & Time:</strong> ${fromUTCString(finalInterviewDate) ? fromUTCString(finalInterviewDate).toLocaleString('en-US') : 'N/A'}</li>
             </ul>
           </body>
           </html>
@@ -185,7 +190,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     res.json({
       success: true,
       message: 'Interviewer assigned successfully',
-      data: parsedEvaluation
+      data: convertedEvaluation
     });
   } catch (error) {
     console.error('Error assigning interviewer:', error);
@@ -268,19 +273,20 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
       finalInterviewDate = slot.start_time;
     }
 
-    // Update evaluation
+    // Update evaluation (convert to UTC)
+    const interviewDateUTC = toUTCString(finalInterviewDate);
     await query(
       `UPDATE candidate_evaluations 
        SET interviewer_id = ?, interview_date = ?
        WHERE id = ?`,
-      [interviewer_id, finalInterviewDate, evaluation_id]
+      [interviewer_id, interviewDateUTC, evaluation_id]
     );
 
-    // Create new assignment record
+    // Create new assignment record (convert to UTC)
     await query(
       `INSERT INTO interview_assignments (evaluation_id, interviewer_id, interview_date, assigned_by, notes)
        VALUES (?, ?, ?, ?, ?)`,
-      [evaluation_id, interviewer_id, finalInterviewDate, req.user.id, 'Reassigned']
+      [evaluation_id, interviewer_id, interviewDateUTC, req.user.id, 'Reassigned']
     );
 
     // Send email notifications
@@ -296,7 +302,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
         candidateName,
         candidateEmail,
         jobTitle,
-        interviewDate: finalInterviewDate
+        interviewDate: interviewDateUTC
       });
     }
 
@@ -306,7 +312,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
         candidateEmail,
         candidateName,
         jobTitle,
-        interviewDate: finalInterviewDate,
+        interviewDate: interviewDateUTC,
         interviewerName: interviewer.full_name || interviewer.email
       });
     }
@@ -329,6 +335,9 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
       ...updatedEvaluation,
       interviewer: updatedEvaluation.interviewer ? JSON.parse(updatedEvaluation.interviewer) : null
     };
+    
+    // Convert datetime fields to UTC
+    const convertedEvaluation = convertResultToUTC(parsedEvaluation);
 
     // Notify HR/Admin about updated interview schedule
     try {
@@ -350,7 +359,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
               <li><strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}</li>
               <li><strong>Job Position:</strong> ${jobTitle}</li>
               <li><strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}</li>
-              <li><strong>New Date & Time:</strong> ${new Date(finalInterviewDate).toLocaleString('en-US')}</li>
+              <li><strong>New Date & Time:</strong> ${fromUTCString(finalInterviewDate) ? fromUTCString(finalInterviewDate).toLocaleString('en-US') : 'N/A'}</li>
             </ul>
           </body>
           </html>
@@ -373,7 +382,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     res.json({
       success: true,
       message: 'Interview details updated successfully',
-      data: parsedEvaluation
+      data: convertedEvaluation
     });
   } catch (error) {
     console.error('Error updating interview assignment:', error);
@@ -423,7 +432,7 @@ router.get('/my-assignments', authenticate, authorize('Interviewer'), async (req
 
     const evaluations = await query(sql, params);
 
-    // Parse JSON fields
+    // Parse JSON fields and convert datetime to UTC
     const parsedEvaluations = evaluations.map(eval => {
       const parsed = {
         ...eval,
@@ -437,7 +446,7 @@ router.get('/my-assignments', authenticate, authorize('Interviewer'), async (req
         parsed.resume.experience = parsed.resume.experience ? JSON.parse(parsed.resume.experience) : [];
         parsed.resume.education = parsed.resume.education ? JSON.parse(parsed.resume.education) : [];
       }
-      return parsed;
+      return convertResultToUTC(parsed);
     });
 
     res.json({
@@ -471,8 +480,9 @@ router.post('/slots/generate', authenticate, authorize('Interviewer'), async (re
     const startTime = start_time || '09:00';
     const endTime = end_time || '18:00';
 
-    const startDateTime = new Date(`${date}T${startTime}:00`);
-    const endDateTime = new Date(`${date}T${endTime}:00`);
+    // Create dates in UTC
+    const startDateTime = new Date(`${date}T${startTime}:00Z`);
+    const endDateTime = new Date(`${date}T${endTime}:00Z`);
 
     if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
       return res.status(400).json({
@@ -496,8 +506,8 @@ router.post('/slots/generate', authenticate, authorize('Interviewer'), async (re
       const currentEnd = new Date(currentStart.getTime() + slotMinutes * 60000);
       if (currentEnd > endDateTime) break;
       slots.push({
-        start_time: currentStart.toISOString().slice(0, 19).replace('T', ' '),
-        end_time: currentEnd.toISOString().slice(0, 19).replace('T', ' ')
+        start_time: toUTCString(currentStart),
+        end_time: toUTCString(currentEnd)
       });
       currentStart = currentEnd;
     }
@@ -523,17 +533,19 @@ router.post('/slots/generate', authenticate, authorize('Interviewer'), async (re
       values
     );
 
+    const startTimeUTC = toUTCString(startDateTime);
+    const endTimeUTC = toUTCString(endDateTime);
     const createdSlots = await query(
       `SELECT * FROM interviewer_time_slots 
        WHERE interviewer_id = ? AND start_time >= ? AND end_time <= ?
        ORDER BY start_time ASC`,
-      [req.user.id, startDateTime, endDateTime]
+      [req.user.id, startTimeUTC, endTimeUTC]
     );
 
     res.json({
       success: true,
       message: 'Time slots generated successfully',
-      data: createdSlots
+      data: convertResultToUTC(createdSlots)
     });
   } catch (error) {
     console.error('Error generating time slots:', error);
@@ -566,8 +578,9 @@ router.post('/slots/create-selected', authenticate, authorize('Interviewer'), as
         });
       }
 
-      const startDateTime = new Date(slot.start_time);
-      const endDateTime = new Date(slot.end_time);
+      // Convert to UTC strings for database storage
+      const startDateTime = fromUTCString(slot.start_time);
+      const endDateTime = fromUTCString(slot.end_time);
 
       if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
         return res.status(400).json({
@@ -584,12 +597,12 @@ router.post('/slots/create-selected', authenticate, authorize('Interviewer'), as
       }
     }
 
-    // Insert slots (using INSERT IGNORE to avoid duplicates)
+    // Insert slots (using INSERT IGNORE to avoid duplicates) - convert to UTC
     const values = [];
     const placeholders = [];
     slots.forEach(slot => {
       placeholders.push('(?, ?, ?, ?)');
-      values.push(req.user.id, slot.start_time, slot.end_time, 0);
+      values.push(req.user.id, toUTCString(slot.start_time), toUTCString(slot.end_time), 0);
     });
 
     await query(
@@ -598,8 +611,8 @@ router.post('/slots/create-selected', authenticate, authorize('Interviewer'), as
       values
     );
 
-    // Get the created slots
-    const startTimes = slots.map(s => s.start_time);
+    // Get the created slots (convert start times to UTC for query)
+    const startTimes = slots.map(s => toUTCString(s.start_time));
     const placeholders2 = startTimes.map(() => '?').join(',');
     const createdSlots = await query(
       `SELECT * FROM interviewer_time_slots 
@@ -611,7 +624,7 @@ router.post('/slots/create-selected', authenticate, authorize('Interviewer'), as
     res.json({
       success: true,
       message: `${createdSlots.length} time slot(s) created successfully`,
-      data: createdSlots
+      data: convertResultToUTC(createdSlots)
     });
   } catch (error) {
     console.error('Error creating selected time slots:', error);
@@ -642,12 +655,12 @@ WHERE interviewer_id = ?
 
     if (from) {
       sql += ' AND start_time >= ?';
-      params.push(from);
+      params.push(toUTCString(from));
     }
 
     if (to) {
       sql += ' AND end_time <= ?';
-      params.push(to);
+      params.push(toUTCString(to));
     }
 
     sql += ' ORDER BY start_time ASC';
@@ -739,32 +752,38 @@ router.get('/available-slots', authenticate, async (req, res) => {
       FROM interviewer_time_slots s
       LEFT JOIN users u ON s.interviewer_id = u.id
       WHERE s.is_booked = 0
-        AND s.start_time > NOW()
+        AND s.start_time > UTC_TIMESTAMP()
     `;
 
-    // Restrict to mapped interviewers if mapping exists
-    if (mappedInterviewers && mappedInterviewers.length > 0) {
-      const placeholders = mappedInterviewers.map(() => '?').join(',');
-      sql += ` AND s.interviewer_id IN (${placeholders})`;
-      params.push(...mappedInterviewers);
-    }
-
-    // Optional filter for a specific interviewer
+    // If a specific interviewer_id is provided, use that
+    // Otherwise, restrict to mapped interviewers if mapping exists
     if (interviewer_id) {
       sql += ' AND s.interviewer_id = ?';
       params.push(interviewer_id);
+    } else if (mappedInterviewers && mappedInterviewers.length > 0) {
+      const placeholders = mappedInterviewers.map(() => '?').join(',');
+      sql += ` AND s.interviewer_id IN (${placeholders})`;
+      params.push(...mappedInterviewers);
     }
 
     sql += `
       ORDER BY s.start_time ASC
     `;
 
+    console.log('Available slots query:', sql);
+    console.log('Available slots params:', params);
+    
     const rows = await query(sql, params);
+    
+    console.log('Available slots found:', rows.length);
 
-    const slots = rows.map(row => ({
-      ...row,
-      interviewer: row.interviewer ? JSON.parse(row.interviewer) : null
-    }));
+    const slots = rows.map(row => {
+      const slot = {
+        ...row,
+        interviewer: row.interviewer ? JSON.parse(row.interviewer) : null
+      };
+      return convertResultToUTC(slot);
+    });
 
     res.json({
       success: true,
@@ -798,14 +817,17 @@ inner join job_descriptions jd
  where Date(its.start_time) = utc_date() AND is_booked =1 
 
 `
-      const interviews = await query(sql);
+        const interviews = await query(sql);
+        
+        // Convert datetime fields to UTC
+        const convertedInterviews = convertResultToUTC(interviews);
 
-        if(interviews.length >  0)
+        if(convertedInterviews.length >  0)
         {
             return  res.status(200).json({
         success: true,
-        count: interviews.length,
-        data: interviews
+        count: convertedInterviews.length,
+        data: convertedInterviews
       });
         }
 

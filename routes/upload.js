@@ -11,6 +11,7 @@ const { matchResumeWithJobDescription } = require('../utils/resumeMatcher');
 const { hasRecentApplication , alreadyAssignInterView } = require('../utils/applicationValidator');
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
+const { convertResultToUTC } = require('../utils/datetimeUtils');
 
 const router = express.Router();
 
@@ -853,7 +854,7 @@ router.get('/talygen', authenticate, async (req, res) => {
 
     res.json({
       success: true,
-      data: files,
+      data: convertResultToUTC(files),
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
