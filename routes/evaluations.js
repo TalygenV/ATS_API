@@ -700,39 +700,112 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
     const { job_description_id } = req.params;
     const { status, sort_by } = req.query;
 
-    let sql = `
-      SELECT 
-        ce.*,
-        JSON_OBJECT(
-          'id', r.id,
-          'name', r.name,
-          'email', r.email,
-          'phone', r.phone,
-          'file_name', r.file_name,
-          'location', r.location,
-          'total_experience', r.total_experience,
-          'parent_id', r.parent_id,
-          'version_number', r.version_number,
-          'created_at', r.created_at
-        ) as resume,
-        JSON_OBJECT(
-          'id', u.id,
-          'email', u.email,
-          'full_name', u.full_name
-        ) as interviewer
-      FROM candidate_evaluations ce
-      LEFT JOIN resumes r ON ce.resume_id = r.id
-      LEFT JOIN users u ON ce.interviewer_id = u.id
-      WHERE ce.job_description_id = ?
-    `;
-    const params = [job_description_id];
+//     let sql = `
+//       SELECT 
+//         ce.*,
+//         (
+//   SELECT COUNT(*)
+//   FROM resumes r3
+//   WHERE r3.parent_id = r.parent_id
+//      OR r3.id = r.parent_id
+//      OR r3.id = r.id
+// ) AS total_versions
+//         JSON_OBJECT(
+//           'id', r.id,
+//           'name', r.name,
+//           'email', r.email,
+//           'phone', r.phone,
+//           'file_name', r.file_name,
+//           'location', r.location,
+//           'total_experience', r.total_experience,
+//           'parent_id', r.parent_id,
+//           'version_number', r.version_number,
+//           'created_at', r.created_at
+//         ) as resume,
+//         JSON_OBJECT(
+//           'id', u.id,
+//           'email', u.email,
+//           'full_name', u.full_name
+//         ) as interviewer
+//       FROM candidate_evaluations ce
+//       LEFT JOIN resumes r ON ce.resume_id = r.id
+//       LEFT JOIN users u ON ce.interviewer_id = u.id
+//       WHERE ce.job_description_id = ?
+//     `;
+  let sql = `
+  SELECT 
+    ce.*,
+
+  (
+  SELECT COUNT(*)
+  FROM resumes r3
+  WHERE
+    (
+      -- CASE 1: current resume is ROOT (version 1)
+      r.parent_id IS NULL
+      AND (r3.id = r.id OR r3.parent_id = r.id)
+    )
+    OR
+    (
+      -- CASE 2: current resume is CHILD (version 2+)
+      r.parent_id IS NOT NULL
+      AND (r3.id = r.parent_id OR r3.parent_id = r.parent_id)
+    )
+) AS total_versions,
+
+
+    JSON_OBJECT(
+      'id', r.id,
+      'name', r.name,
+      'email', r.email,
+      'phone', r.phone,
+      'file_name', r.file_name,
+      'location', r.location,
+      'total_experience', r.total_experience,
+      'parent_id', r.parent_id,
+      'version_number', r.version_number,
+      'created_at', r.created_at
+    ) AS resume,
+
+    JSON_OBJECT(
+      'id', u.id,
+      'email', u.email,
+      'full_name', u.full_name
+    ) AS interviewer
+
+  FROM candidate_evaluations ce
+  LEFT JOIN resumes r ON ce.resume_id = r.id
+  LEFT JOIN users u ON ce.interviewer_id = u.id
+  WHERE ce.job_description_id = ?
+`;
+
+const params = [job_description_id];
 
     // Visibility rules: Interviewers can only see their assigned candidates
-    if (req.user.role === 'Interviewer') {
-      sql += ' AND ce.interviewer_id = ?';
-      params.push(req.user.id);
-    }
+if (req.user.role === 'Interviewer') {
+  sql += `
+    AND (
+      ce.interviewer_id = ?
+      OR EXISTS (
+        SELECT 1
+        FROM candidate_evaluations ce2
+        JOIN resumes r2 ON ce2.resume_id = r2.id
+        WHERE ce2.interviewer_id = ?
+          AND ce2.job_description_id = ce.job_description_id
+          AND (
+            r2.id = r.parent_id
+            OR r2.parent_id = r.id
+            OR r2.id = r.id
+          )
+      )
+    )
+  `;
+  params.push(req.user.id, req.user.id);
+}
 
+
+
+    
     // Status filtering - check all status fields
     // if (status) {
     //   if (status === 'selected') {
@@ -782,6 +855,8 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
       }
       return parsed;
     });
+    const isInterviewer = req.user.role === 'Interviewer';
+const interviewerId = req.user.id;
 
     // Process evaluations with version information
     // Group by email/name to find all versions and select the latest one
@@ -832,12 +907,14 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
             const versionA = a.resume?.version_number || 1;
             const versionB = b.resume?.version_number || 1;
             if (versionB !== versionA) {
-              return versionB - versionA; // Higher version first
+             return versionB - versionA; // Higher version first
+              // return versionA - versionB; // Higher version first
             }
             // If versions are equal, sort by resume created_at DESC
             const resumeDateA = new Date(a.resume?.created_at || a.created_at || 0);
             const resumeDateB = new Date(b.resume?.created_at || b.created_at || 0);
             return resumeDateB - resumeDateA;
+            // return resumeDateA - resumeDateB;
           });
           
           const latestEval = sortedGroup[0];
@@ -852,10 +929,64 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
             isVersion: isVersion,
             versionNumber: versionNumber,
             parentId: parentId,
-            totalVersions: totalVersions,
-            duplicateCount: totalVersions - 1
+             totalVersions: latestEval.total_versions,
+            duplicateCount: latestEval.total_versions - 1
+            // totalVersions: totalVersions,
+            // duplicateCount: totalVersions - 1
           });
-        } else if (group && group.length === 1) {
+        }
+//         if (group && group.length > 1) {
+
+//   let selectedEval;
+
+//   if (isInterviewer) {
+//     // interviewer ke liye: usko assigned record hi lo
+//     const interviewerAssigned = group.filter(
+//       g => g.interviewer_id === interviewerId
+//     );
+
+//     if (interviewerAssigned.length > 0) {
+//       // agar multiple assigned ho to unme se latest
+//       selectedEval = interviewerAssigned.sort((a, b) => {
+//         const versionA = a.resume?.version_number || 1;
+//         const versionB = b.resume?.version_number || 1;
+//         return versionB - versionA;
+//       })[0];
+//     } else {
+//       // interviewer ka koi record nahi → skip
+//       processedKeys.add(groupKey);
+//       continue;
+//     }
+
+//   } else {
+//     // HR / Admin → global latest
+//     selectedEval = [...group].sort((a, b) => {
+//       const versionA = a.resume?.version_number || 1;
+//       const versionB = b.resume?.version_number || 1;
+//       if (versionB !== versionA) return versionB - versionA;
+
+//       const resumeDateA = new Date(a.resume?.created_at || a.created_at || 0);
+//       const resumeDateB = new Date(b.resume?.created_at || b.created_at || 0);
+//       return resumeDateB - resumeDateA;
+//     })[0];
+//   }
+
+//   processedEvaluations.push({
+//     ...selectedEval,
+//     isDuplicate: true,
+//     isVersion: !!selectedEval.resume?.parent_id,
+//     versionNumber: selectedEval.resume?.version_number || 1,
+//     parentId: selectedEval.resume?.parent_id || null,
+    
+//     // totalVersions: group.length,
+//     // duplicateCount: group.length - 1
+//       totalVersions: selectedEval.total_versions,
+//   duplicateCount: selectedEval.total_versions - 1
+//   });
+// }
+
+
+         else if (group && group.length === 1) {
           // Only one version
           const eval = group[0];
           processedEvaluations.push({

@@ -6,103 +6,314 @@ const { generateQuestionsFromJD } = require('../utils/questionGenerator');
 const router = express.Router();
 
 // Get all job descriptions (all authenticated users can view)
-router.get('/', authenticate, async (req, res) => {
-  try {
+// router.get('/', authenticate, async (req, res) => {
+//   try {
    
-//     let params = []
-//      let sql =  `  SELECT 
+// //     let params = []
+// //      let sql =  `  SELECT 
+// //     jd.*,
+// //     COUNT(DISTINCT ce.resume_id) AS resume_count,
+// //     (
+      
+// //         SELECT COUNT(DISTINCT ce2.email) 
+// //         FROM candidate_evaluations ce2
+// //         WHERE ce2.status = 'accepted'
+// //         AND ce2.job_description_id = jd.id
+// //     ) AS accepted,
+// //     (
+// //        SELECT COUNT(DISTINCT ce2.email) 
+// //        FROM candidate_evaluations ce2
+// //         WHERE ce2.status = 'pending'
+// //         AND ce2.job_description_id = jd.id
+// //     ) AS pending,
+// //     (
+// //         SELECT COUNT(DISTINCT ce2.email) 
+// //         FROM candidate_evaluations ce2
+// //         WHERE ce2.status = 'rejected'
+// //         AND ce2.job_description_id = jd.id
+// //     ) AS rejected
+// // FROM job_descriptions jd
+// // LEFT JOIN candidate_evaluations ce 
+// //     ON jd.id = ce.job_description_id
+// // GROUP BY jd.id
+// // ORDER BY jd.created_at DESC`
+
+//         let params = [];
+
+//     // If the user is an Interviewer we will restrict joins & subqueries to that interviewer
+//     const isInterviewer = req.user.role === 'Interviewer';
+
+//     // Join condition (restrict ce rows to this interviewer when applicable)
+//     const joinCondition = isInterviewer ? ' AND ce.interviewer_id = ?' : '';
+//     if (isInterviewer) params.push(req.user.id); // for the LEFT JOIN condition
+
+//     // Subquery extra condition to restrict counts to this interviewer when applicable
+//     const subQueryInterviewerCond = isInterviewer ? ' AND ce2.interviewer_id = ?' : '';
+
+//     const isHRorAdmin = req.user.role === 'HR' || req.user.role === 'Admin';
+
+//     // If interviewer, we want to show only job_descriptions that have at least one candidate for them
+//     // const havingClause = isInterviewer ? ' HAVING COUNT(DISTINCT ce.id) > 0' : '';
+//       const havingClause = '';
+      
+
+//     // const sql = `
+//     //   SELECT
+//     //     jd.*,
+//     //     COUNT(DISTINCT ce.resume_id) AS resume_count,
+//     //     (
+//     //       SELECT COUNT(DISTINCT ce2.email)
+//     //       FROM candidate_evaluations ce2
+//     //       WHERE ce2.status = 'accepted'
+//     //         AND ce2.job_description_id = jd.id
+//     //         ${subQueryInterviewerCond}
+//     //     ) AS accepted,
+//     //     (
+//     //       SELECT COUNT(DISTINCT ce2.email)
+//     //       FROM candidate_evaluations ce2
+//     //       WHERE ce2.status = 'pending'
+//     //         AND ce2.job_description_id = jd.id
+//     //         ${subQueryInterviewerCond}
+//     //     ) AS pending,
+//     //     (
+//     //       SELECT COUNT(DISTINCT ce2.email)
+//     //       FROM candidate_evaluations ce2
+//     //       WHERE ce2.status = 'rejected'
+//     //         AND ce2.job_description_id = jd.id
+//     //         ${subQueryInterviewerCond}
+//     //     ) AS rejected
+//     //   FROM job_descriptions jd
+//     //   LEFT JOIN candidate_evaluations ce
+//     //     ON jd.id = ce.job_description_id ${joinCondition}
+//     //   GROUP BY jd.id
+//     //   ${havingClause}
+//     //   ORDER BY jd.created_at DESC
+//     // `;
+
+
+//     let sql = `SELECT 
 //     jd.*,
 //     COUNT(DISTINCT ce.resume_id) AS resume_count,
 //     (
       
 //         SELECT COUNT(DISTINCT ce2.email) 
 //         FROM candidate_evaluations ce2
+//         inner join resumes r2 on r2.id = ce2.resume_id and r2.parent_id is null
 //         WHERE ce2.status = 'accepted'
 //         AND ce2.job_description_id = jd.id
+//             ${subQueryInterviewerCond}
 //     ) AS accepted,
 //     (
 //        SELECT COUNT(DISTINCT ce2.email) 
 //        FROM candidate_evaluations ce2
+//          inner join resumes r2 on r2.id = ce2.resume_id and r2.parent_id is null
 //         WHERE ce2.status = 'pending'
 //         AND ce2.job_description_id = jd.id
+//             ${subQueryInterviewerCond}
 //     ) AS pending,
 //     (
 //         SELECT COUNT(DISTINCT ce2.email) 
 //         FROM candidate_evaluations ce2
+//           inner join resumes r2 on r2.id = ce2.resume_id and r2.parent_id is null
 //         WHERE ce2.status = 'rejected'
 //         AND ce2.job_description_id = jd.id
-//     ) AS rejected
-// FROM job_descriptions jd
+//             ${subQueryInterviewerCond}
+//     ) AS rejected,
+//      (
+//         SELECT COUNT(DISTINCT ce2.email) 
+//         FROM candidate_evaluations ce2
+//           inner join resumes r2 on r2.id = ce2.resume_id and r2.parent_id is null
+//         WHERE ce2.interviewer_status = 'on_hold'
+//         or ce2.interviewer_status = 'selected'
+//         Or
+//         ce2.hr_final_status = 'on_hold'
+//         AND ce2.job_description_id = jd.id
+//     ) AS onhold,
+    
+//          (
+//         SELECT COUNT(DISTINCT ce2.email) 
+//         FROM candidate_evaluations ce2
+//           inner join resumes r2 on r2.id = ce2.resume_id and r2.parent_id is null
+//         WHERE 
+//         ce2.hr_final_status = 'rejected'
+//         AND ce2.job_description_id = jd.id
+//     ) AS finalRejected,
+//          (
+//         SELECT COUNT(DISTINCT ce2.email) 
+//         FROM candidate_evaluations ce2
+//           inner join resumes r2 on r2.id = ce2.resume_id and r2.parent_id is null
+//         WHERE ce2.hr_final_status = 'selected'
+//         AND ce2.job_description_id = jd.id
+//     ) AS finalSeclected,
+//     (
+//         SELECT COUNT(DISTINCT ce2.email) 
+//         FROM candidate_evaluations ce2
+//           inner join resumes r2 on r2.id = ce2.resume_id and r2.parent_id is null
+//         WHERE ce2.interviewer_id is null 
+//         AND ce2.job_description_id = jd.id
+//     ) AS totaldesisionPending, 
+//      (
+//         SELECT COUNT(DISTINCT ce2.email) 
+//         FROM candidate_evaluations ce2
+        
+//         WHERE ce2.interviewer_id is not null
+//         AND ce2.interview_date  <= UTC_TIMESTAMP()
+//         AND ce2.interviewer_feedback is null
+//         AND ce2.job_description_id = jd.id
+//     ) AS ScheduledInterview 
+    
+//     FROM job_descriptions jd
 // LEFT JOIN candidate_evaluations ce 
-//     ON jd.id = ce.job_description_id
+// inner join resumes r on r.id = ce.resume_id and r.parent_id is null
+//     ON jd.id = ce.job_description_id ${joinCondition}
 // GROUP BY jd.id
 // ORDER BY jd.created_at DESC`
 
-        let params = [];
+//     // If interviewer, we pushed one param for the LEFT JOIN already.
+//     // For subqueries we must push the interviewer id once per subquery condition used.
+//     if (isInterviewer) {
+//       // three subqueries -> push interviewer id three more times (order matters)
+//       params.push(req.user.id, req.user.id, req.user.id);
+//     }
 
-    // If the user is an Interviewer we will restrict joins & subqueries to that interviewer
-    const isInterviewer = req.user.role === 'Interviewer';
-
-    // Join condition (restrict ce rows to this interviewer when applicable)
-    const joinCondition = isInterviewer ? ' AND ce.interviewer_id = ?' : '';
-    if (isInterviewer) params.push(req.user.id); // for the LEFT JOIN condition
-
-    // Subquery extra condition to restrict counts to this interviewer when applicable
-    const subQueryInterviewerCond = isInterviewer ? ' AND ce2.interviewer_id = ?' : '';
-
-    // If interviewer, we want to show only job_descriptions that have at least one candidate for them
-    // const havingClause = isInterviewer ? ' HAVING COUNT(DISTINCT ce.id) > 0' : '';
-      const havingClause = '';
-
-    const sql = `
-      SELECT
-        jd.*,
-        COUNT(DISTINCT ce.resume_id) AS resume_count,
-        (
-          SELECT COUNT(DISTINCT ce2.email)
-          FROM candidate_evaluations ce2
-          WHERE ce2.status = 'accepted'
-            AND ce2.job_description_id = jd.id
-            ${subQueryInterviewerCond}
-        ) AS accepted,
-        (
-          SELECT COUNT(DISTINCT ce2.email)
-          FROM candidate_evaluations ce2
-          WHERE ce2.status = 'pending'
-            AND ce2.job_description_id = jd.id
-            ${subQueryInterviewerCond}
-        ) AS pending,
-        (
-          SELECT COUNT(DISTINCT ce2.email)
-          FROM candidate_evaluations ce2
-          WHERE ce2.status = 'rejected'
-            AND ce2.job_description_id = jd.id
-            ${subQueryInterviewerCond}
-        ) AS rejected
-      FROM job_descriptions jd
-      LEFT JOIN candidate_evaluations ce
-        ON jd.id = ce.job_description_id ${joinCondition}
-      GROUP BY jd.id
-      ${havingClause}
-      ORDER BY jd.created_at DESC
-    `;
-
-    // If interviewer, we pushed one param for the LEFT JOIN already.
-    // For subqueries we must push the interviewer id once per subquery condition used.
-    if (isInterviewer) {
-      // three subqueries -> push interviewer id three more times (order matters)
-      params.push(req.user.id, req.user.id, req.user.id);
-    }
-
-        const jobDescriptions = await query(sql, params);
+//         const jobDescriptions = await query(sql, params);
 
   
 
-    // Parse JSON fields
-    const parsedJobDescriptions = jobDescriptions.map(jd => ({
+//     // Parse JSON fields
+//     const parsedJobDescriptions = jobDescriptions.map(jd => ({
+//       ...jd,
+//       interviewers: jd.interviewers ? JSON.parse(jd.interviewers) : [],
+//       resume_count: parseInt(jd.resume_count) || 0
+//     }));
+
+//     res.json({
+//       success: true,
+//       count: parsedJobDescriptions.length,
+//       data: parsedJobDescriptions
+//     });
+//   } catch (error) {
+//     console.error('Error fetching job descriptions:', error);
+//     res.status(500).json({
+//       error: 'Failed to fetch job descriptions',
+//       message: error.message
+//     });
+//   }
+// });
+
+
+router.get('/', authenticate, async (req, res) => {
+  try {
+    let params = [];
+
+    // Role check
+    const isInterviewer = req.user.role === 'Interviewer';
+
+    // Interviewer restriction
+    const joinCondition = isInterviewer ? ' AND ce.interviewer_id = ?' : '';
+    if (isInterviewer) params.push(req.user.id);
+
+    const sql = `
+      WITH latest_resumes AS (
+        SELECT r1.id
+        FROM resumes r1
+        JOIN (
+          SELECT 
+            COALESCE(parent_id, id) AS root_id,
+            MAX(version_number) AS max_version
+          FROM resumes
+          GROUP BY COALESCE(parent_id, id)
+        ) x
+          ON x.root_id = COALESCE(r1.parent_id, r1.id)
+         AND x.max_version = r1.version_number
+      )
+
+      SELECT 
+        jd.*,
+
+        COUNT(DISTINCT lr.id) AS resume_count,
+
+        COUNT(DISTINCT CASE 
+          WHEN lr.id IS NOT NULL AND ce.status = 'accepted'
+          THEN ce.email END
+        ) AS accepted,
+
+        COUNT(DISTINCT CASE 
+          WHEN lr.id IS NOT NULL AND ce.status = 'pending'
+          THEN ce.email END
+        ) AS pending,
+
+        COUNT(DISTINCT CASE 
+          WHEN lr.id IS NOT NULL AND ce.status = 'rejected'
+          THEN ce.email END
+        ) AS rejected,
+
+     COUNT(DISTINCT CASE 
+  WHEN lr.id IS NOT NULL
+   AND (
+        ce.interviewer_status IN ('on_hold' , 'rejected')
+        OR ce.hr_final_status = 'on_hold'
+       )
+   AND ce.hr_final_status NOT IN ('selected','rejected')
+  THEN ce.email 
+END) AS onhold,
+
+
+        COUNT(DISTINCT CASE 
+          WHEN lr.id IS NOT NULL AND ce.hr_final_status = 'rejected'
+          THEN ce.email END
+        ) AS finalRejected,
+
+        COUNT(DISTINCT CASE 
+          WHEN lr.id IS NOT NULL AND ce.hr_final_status = 'selected'
+          THEN ce.email END
+        ) AS finalSelected,
+
+          COUNT(DISTINCT CASE 
+  WHEN lr.id IS NOT NULL
+   AND ( ce.interviewer_status IN ('selected') OR         ( ce.interview_date <= DATE_ADD(
+  CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+05:30'),
+  INTERVAL 45 MINUTE
+) AND ce.interviewer_feedback IS NULL) )
+
+   AND ce.hr_final_status NOT IN ('selected','rejected' , 'on_hold' )
+  THEN ce.email 
+END)  AS totalDecisionPending,
+            COUNT(DISTINCT CASE 
+          WHEN lr.id IS NOT NULL AND ce.interviewer_id IS NULL
+          THEN ce.email END
+        ) AS totalPending,
+
+        COUNT(DISTINCT CASE 
+          WHEN lr.id IS NOT NULL
+           AND ce.interviewer_id IS NOT NULL
+           AND ce.interviewer_feedback IS NULL
+           AND 
+           ce.interview_date >= DATE_ADD(
+  CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+05:30'),
+  INTERVAL 45 MINUTE
+)
+          THEN ce.email END
+        ) AS scheduledInterview
+
+      FROM job_descriptions jd
+      LEFT JOIN candidate_evaluations ce
+        ON ce.job_description_id = jd.id
+        ${joinCondition}
+      LEFT JOIN latest_resumes lr
+        ON lr.id = ce.resume_id
+
+      GROUP BY jd.id
+      ORDER BY jd.created_at DESC
+    `;
+
+    const rows = await query(sql, params);
+    // ce.interview_date >= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 45 MINUTE)
+
+    const parsedJobDescriptions = rows.map(jd => ({
       ...jd,
       interviewers: jd.interviewers ? JSON.parse(jd.interviewers) : [],
-      resume_count: parseInt(jd.resume_count) || 0
+      resume_count: Number(jd.resume_count) || 0
     }));
 
     res.json({
@@ -110,14 +321,18 @@ router.get('/', authenticate, async (req, res) => {
       count: parsedJobDescriptions.length,
       data: parsedJobDescriptions
     });
+
   } catch (error) {
     console.error('Error fetching job descriptions:', error);
     res.status(500).json({
-      error: 'Failed to fetch job descriptions',
-      message: error.message
+      success: false,
+      message: 'Failed to fetch job descriptions',
+      error: error.message
     });
   }
 });
+
+
 
 // Get job description by ID (all authenticated users can view)
 router.get('/:id', authenticate, async (req, res) => {

@@ -36,7 +36,38 @@ async function hasRecentApplication(email) {
   }
 }
 
+
+async function alreadyAssignInterView(email) {
+  if (!email) {
+    // If no email provided, we can't check, so allow the application
+    return false;
+  }
+
+  try {
+    // Normalize email to lowercase for consistency
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Check for  application interview already scheduled
+
+    const interviewScheduled = await queryOne(
+      `SELECT id, created_at 
+       FROM candidate_evaluations 
+       WHERE email = ? And interviewer_id is not null 
+       ORDER BY created_at DESC 
+       LIMIT 1`,
+      [normalizedEmail]
+    );
+
+    return !!interviewScheduled;
+  } catch (error) {
+    console.error('Error checking for recent application:', error);
+    // On error, allow the application to proceed (fail open)
+    return false;
+  }
+}
+
 module.exports = {
-  hasRecentApplication
+  hasRecentApplication,
+  alreadyAssignInterView
 };
 

@@ -8,7 +8,7 @@ const axios = require('axios');
 const { extractTextFromFile, parseResumeWithGemini } = require('../utils/resumeParser');
 const { findOriginalResume, getNextVersionNumber } = require('../utils/duplicateChecker');
 const { matchResumeWithJobDescription } = require('../utils/resumeMatcher');
-const { hasRecentApplication } = require('../utils/applicationValidator');
+const { hasRecentApplication , alreadyAssignInterView } = require('../utils/applicationValidator');
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
 
@@ -237,19 +237,33 @@ const processResumeFile = async (file, jobData) => {
   // Normalize email to lowercase for consistency
   const normalizedEmail = parsedData.email ? parsedData.email.toLowerCase().trim() : null;
 
-  // Check if candidate has applied within the last 6 months
-  // if (normalizedEmail) {
-  //   const hasRecent = await hasRecentApplication(normalizedEmail);
-  //   if (hasRecent) {
-  //     // Clean up file before throwing error
-  //     try {
-  //       await fsPromises.unlink(filePath);
-  //     } catch (e) {
-  //       // Ignore cleanup errors
-  //     }
-  //     throw new Error('This candidate has already applied within the last 6 months');
-  //   }
-  // }
+  //  Check if candidate has applied within the last 6 months
+  if (normalizedEmail) {
+     // const hasRecent = await hasRecentApplication(normalizedEmail);
+    const hasInterview = await alreadyAssignInterView(normalizedEmail);
+    
+
+     if (hasInterview) {
+      // Clean up file before throwing error
+      try {
+        await fsPromises.unlink(filePath);
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      throw new Error('Candidate interview is already scheduled ');
+    }
+
+
+    // if (hasRecent) {
+    //   // Clean up file before throwing error
+    //   try {
+    //     await fsPromises.unlink(filePath);
+    //   } catch (e) {
+    //     // Ignore cleanup errors
+    //   }
+    //   throw new Error('This candidate has already applied within the last 6 months');
+    // }
+  }
 
   // Check for duplicate resume and get versioning info
   const originalResumeId = await findOriginalResume(parsedData);

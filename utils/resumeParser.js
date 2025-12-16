@@ -1,5 +1,6 @@
 const groq = require('../config/groq');
 const pdfParse = require('pdf-parse');
+const PDFParser = require('pdf2json');
 const mammoth = require('mammoth');
 const fs = require('fs').promises;
 
