@@ -273,8 +273,9 @@ SELECT
     THEN ce.email END
   ) AS finalSelected,
 
-  /* ✅ Decision Pending (NO TIME LOGIC) */
-  COUNT(DISTINCT CASE 
+
+/* ✅ Decision Pending (ONLY past / completed stage, not future scheduled) */
+COUNT(DISTINCT CASE 
   WHEN lr.id IS NOT NULL
    AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
    AND (
@@ -282,16 +283,11 @@ SELECT
      OR (
        ce.interview_date IS NOT NULL
        AND ce.interviewer_feedback IS NULL
+       AND UTC_TIMESTAMP() > DATE_ADD(ce.interview_date, INTERVAL 45 MINUTE)
      )
-   )
-   AND NOT (
-     ce.interview_date IS NOT NULL
-     AND ce.interviewer_feedback IS NULL
-     AND ce.interviewer_status != 'selected'
    )
   THEN ce.email 
 END) AS totalDecisionPending,
-
 
   /* Not assigned to interviewer */
   COUNT(DISTINCT CASE 
@@ -300,15 +296,17 @@ END) AS totalDecisionPending,
   ) AS totalPending,
 
   /* Scheduled interview (future + no feedback) */
-  COUNT(DISTINCT CASE 
-    WHEN lr.id IS NOT NULL
-     AND ce.interviewer_id IS NOT NULL
-     AND ce.interview_date IS NOT NULL
-     AND ce.interviewer_feedback IS NULL
-     AND ce.interview_date > DATE_ADD(UTC_TIMESTAMP(), INTERVAL 45 MINUTE)
-     AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
-    THEN ce.email END
-  ) AS scheduledInterview
+COUNT(DISTINCT CASE 
+  WHEN lr.id IS NOT NULL
+   AND ce.interviewer_id IS NOT NULL
+   AND ce.interview_date IS NOT NULL
+   AND ce.interviewer_feedback IS NULL
+   AND ce.interview_date > UTC_TIMESTAMP()
+   AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
+  THEN ce.email END
+) AS scheduledInterview
+
+
 
 FROM job_descriptions jd
 LEFT JOIN candidate_evaluations ce
