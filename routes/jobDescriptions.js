@@ -1,7 +1,7 @@
 const express = require('express');
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
-const { generateQuestionsFromJD } = require('../utils/questionGenerator');
+const { generateQuestionsFromJD, extractJobDescriptionInfo } = require('../utils/questionGenerator');
 const { convertResultToUTC } = require('../utils/datetimeUtils');
 
 const router = express.Router();
@@ -571,15 +571,22 @@ router.post('/generate-questions',  async (req, res) => {
       });
     }
 
-    const questions = await generateQuestionsFromJD(jobDescription, {
-      title,
-      seniority,
-      yearsOfExperience
-    });
+    // Generate questions and extract job description information in parallel
+    const [questions, extractedInfo] = await Promise.all([
+      generateQuestionsFromJD(jobDescription, {
+        title,
+        seniority,
+        yearsOfExperience
+      }),
+      extractJobDescriptionInfo(jobDescription)
+    ]);
 
     res.json({
       success: true,
-      data: questions
+      data: {
+        questions: questions,
+        jobInfo: extractedInfo
+      }
     });
   } catch (error) {
     console.error('Error generating questions from job description:', error);

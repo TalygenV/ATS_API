@@ -119,8 +119,12 @@ async function parseResumeWithGroq(resumeText, fileName) {
   const prompt = `Parse the following resume and extract all relevant information. Return the data in a structured JSON format with the following fields:
 
     - name: Full name of the person
+    - First_Name: First name of the person (extract from the full name, or from the resume if explicitly mentioned)
+    - Last_Name: Last name of the person (extract from the full name, or from the resume if explicitly mentioned)
     - email: Email address
     - phone: Phone number
+    - Mobile_Number: Mobile/phone number (same as phone, but ensure it's a mobile number if specified)
+    - Date_Of_Birth: Date of birth in format YYYY-MM-DD or YYYY-MM if only month/year is available, or empty string if not found
     - location: COMPLETE FULL ADDRESS including street address, city, state/province, country, and zip/postal code if available. Include all address components mentioned in the resume. If only city/state is mentioned, include that but try to get the full address.
     - skills: Array of technical skills, programming languages, tools, frameworks, and soft skills (e.g., "JavaScript", "Project Management", "React", "Communication")
     - experience: Array of work experience objects, each with: company, position, duration, description, startDate (format: YYYY-MM or YYYY-MM-DD), endDate (format: YYYY-MM or YYYY-MM-DD or "Present" if current job)
@@ -323,6 +327,40 @@ function validateAndCleanData(parsedData) {
   // Ensure location is a string (not array)
   if (parsedData.location && Array.isArray(parsedData.location)) {
     parsedData.location = parsedData.location.join(', ');
+  }
+
+  // Extract First_Name and Last_Name if not explicitly provided
+  if (!parsedData.First_Name || !parsedData.Last_Name) {
+    if (parsedData.name) {
+      const nameParts = parsedData.name.trim().split(/\s+/);
+      if (nameParts.length > 0) {
+        parsedData.First_Name = parsedData.First_Name || nameParts[0] || '';
+        // Last name is everything after the first name
+        parsedData.Last_Name = parsedData.Last_Name || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : '');
+      }
+    } else {
+      parsedData.First_Name = parsedData.First_Name || '';
+      parsedData.Last_Name = parsedData.Last_Name || '';
+    }
+  }
+
+  // Set Mobile_Number from phone if not explicitly provided
+  if (!parsedData.Mobile_Number && parsedData.phone) {
+    parsedData.Mobile_Number = parsedData.phone;
+  } else if (!parsedData.Mobile_Number) {
+    parsedData.Mobile_Number = '';
+  }
+
+  // Ensure Date_Of_Birth is a string (empty if not found)
+  if (parsedData.Date_Of_Birth === null || parsedData.Date_Of_Birth === undefined) {
+    parsedData.Date_Of_Birth = '';
+  }
+
+  // Ensure Email is set (use email field)
+  if (!parsedData.Email && parsedData.email) {
+    parsedData.Email = parsedData.email;
+  } else if (!parsedData.Email) {
+    parsedData.Email = '';
   }
 
   return parsedData;

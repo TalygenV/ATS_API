@@ -189,7 +189,6 @@ router.post('/evaluate-with-qa',  upload.single('resume'), handleMulterError, as
   const startTime = Date.now();
   console.log('\n========== EVALUATION WITH Q&A STARTED ==========');
   console.log(`Timestamp: ${new Date().toISOString()}`);
-  //console.log(`User: ${req.user.email} (${req.user.role})`);
   
   let filePath = null;
   
@@ -284,7 +283,7 @@ router.post('/evaluate-with-qa',  upload.single('resume'), handleMulterError, as
     console.log(`✅ SUCCESS - Evaluation completed in ${totalTime}s`);
     console.log(`==========================================\n`);
 
-    // Return the same format as matchResumeWithJobDescription
+    // Return the same format as matchResumeWithJobDescription with additional candidate information
     res.json({
       success: true,
       data: {
@@ -296,7 +295,14 @@ router.post('/evaluate-with-qa',  upload.single('resume'), handleMulterError, as
         education_match: matchResults.education_match,
         education_details: matchResults.education_details,
         status: matchResults.status,
-        rejection_reason: matchResults.rejection_reason || null
+        rejection_reason: matchResults.rejection_reason || null,
+        candidate_info: {
+          First_Name: parsedData.First_Name || '',
+          Last_Name: parsedData.Last_Name || '',
+          Email: parsedData.Email || parsedData.email || '',
+          Mobile_Number: parsedData.Mobile_Number || parsedData.phone || '',
+          Date_Of_Birth: parsedData.Date_Of_Birth || ''
+        }
       }
     });
   } catch (error) {
