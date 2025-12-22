@@ -3,6 +3,7 @@ const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
 const { generateQuestionsFromJD, extractJobDescriptionInfo } = require('../utils/questionGenerator');
 const { convertResultToUTC } = require('../utils/datetimeUtils');
+const { interviewTimeSlot } = require('../utils/slotMinutes');
 
 const router = express.Router();
 
@@ -283,7 +284,7 @@ COUNT(DISTINCT CASE
      OR (
        ce.interview_date IS NOT NULL
        AND ce.interviewer_feedback IS NULL
-       AND UTC_TIMESTAMP() > DATE_ADD(ce.interview_date, INTERVAL 45 MINUTE)
+       AND UTC_TIMESTAMP() > DATE_ADD(ce.interview_date, INTERVAL ${interviewTimeSlot} MINUTE)
      )
    )
   THEN ce.email 
