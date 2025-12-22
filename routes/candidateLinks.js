@@ -11,6 +11,7 @@ const { hasRecentApplication , alreadyAssignInterView } = require('../utils/appl
 const { findOriginalResume, getNextVersionNumber } = require('../utils/duplicateChecker');
 const { sendEmail, sendInterviewAssignmentToInterviewer, sendInterviewAssignmentToCandidate } = require('../utils/emailService');
 const { toUTCString, fromUTCString, getCurrentUTCString, convertResultToUTC } = require('../utils/datetimeUtils');
+const { generateInterViewLink } = require('../utils/zoomLinkGenerate');
 
 const router = express.Router();
 
@@ -836,26 +837,36 @@ router.post('/:token/book-slot', async (req, res) => {
     const candidateEmail = evaluation.candidate_email || evaluation.email || link.candidate_email;
     const jobTitle = evaluation.job_title || 'Position';
 
+
+          let interviewLink  = await generateInterViewLink({
+    topic: "INTERVIEW",
+    start_time: interviewDateUTC,
+    duration: process.env.INTERVIEW_TIME_SLOT,
+});
+
     // Notify interviewer
     if (slot.interviewer_email) {
       await sendInterviewAssignmentToInterviewer({
-        interviewerEmail: slot.interviewer_email,
+          // interviewerEmail: interviewer.email,
+        interviewerEmail : 'jaxmorgan001@gmail.com',
         interviewerName: slot.interviewer_name || slot.interviewer_email,
         candidateName,
         candidateEmail,
         jobTitle,
-        interviewDate: toUTCString(slot.start_time)
+        interviewDate: fromUTCString(slot.start_time),
+         interViewLink : interviewLink.start_url
       });
     }
 
     // Notify candidate
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
-        candidateEmail,
+         candidateEmail : 'jaidnasim1@gmail.com',
         candidateName,
         jobTitle,
-        interviewDate: toUTCString(slot.start_time),
-        interviewerName: slot.interviewer_name || slot.interviewer_email
+        interviewDate: fromUTCString(slot.start_time),
+        interviewerName: slot.interviewer_name || slot.interviewer_email,
+        interviewLink : interviewLink.join_url
       });
     }
 
@@ -878,21 +889,23 @@ router.post('/:token/book-slot', async (req, res) => {
               <li><strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}</li>
               <li><strong>Job Position:</strong> ${jobTitle}</li>
               <li><strong>Interviewer:</strong> ${slot.interviewer_name || slot.interviewer_email}</li>
+              <li><strong>User Link:</strong> ${interviewLink.join_url}</li>
+              <li><strong>Interviewer Link:</strong> ${interviewLink.start_url}</li>
               <li><strong>Date & Time:</strong> ${fromUTCString(slot.start_time) ? fromUTCString(slot.start_time).toLocaleString('en-US') : 'N/A'}</li>
             </ul>
           </body>
           </html>
         `;
-
-        await Promise.all(
-          hrAdminEmails.map(email =>
-            sendEmail({
-              to: email,
-              subject,
-              html
-            })
-          )
-        );
+       // uncomment to send email to all hr and admin
+        // await Promise.all(
+        //   hrAdminEmails.map(email =>
+        //     sendEmail({
+        //       to: email,
+        //       subject,
+        //       html
+        //     })
+        //   )
+        // );
       }
     } catch (notifyError) {
       console.error('Error sending HR/Admin self-schedule emails:', notifyError);

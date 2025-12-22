@@ -7,6 +7,7 @@ const {
   sendInterviewAssignmentToCandidate
 } = require('../utils/emailService');
 const { toUTCString, fromUTCString, convertResultToUTC } = require('../utils/datetimeUtils');
+const { generateInterViewLink } = require('../utils/zoomLinkGenerate');
 
 
 const router = express.Router();
@@ -103,28 +104,38 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     const candidateEmail = evaluation.candidate_email || evaluation.email;
     const jobTitle = evaluation.job_title || 'Position';
 
-    // Send to interviewer
+          let interviewLink  = await generateInterViewLink({
+    topic: "INTERVIEW",
+    start_time: interviewDateUTC,
+    duration: process.env.INTERVIEW_TIME_SLOT,
+});
+
+ // Send to interviewer
     if (interviewer.email) {
       await sendInterviewAssignmentToInterviewer({
-        interviewerEmail: interviewer.email,
+        // interviewerEmail: interviewer.email,
+        interviewerEmail : 'jaxmorgan001@gmail.com',
         interviewerName: interviewer.full_name || interviewer.email,
         candidateName,
         candidateEmail,
         jobTitle,
-        interviewDate: interviewDateUTC
+        interviewDate: fromUTCString(interviewDateUTC).toLocaleString('en-US'),
+        interViewLink : interviewLink.start_url
       });
     }
 
     // Send to candidate
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
-        candidateEmail,
+        candidateEmail : 'jaidnasim1@gmail.com',
         candidateName,
         jobTitle,
-        interviewDate: interviewDateUTC,
-        interviewerName: interviewer.full_name || interviewer.email
+        interviewDate: fromUTCString(interviewDateUTC).toLocaleString('en-US'),
+        interviewerName: interviewer.full_name || interviewer.email,
+         interviewLink : interviewLink.join_url
       });
     }
+
 
     // Get updated evaluation
     const updatedEvaluation = await queryOne(
@@ -168,21 +179,24 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
               <li><strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}</li>
               <li><strong>Job Position:</strong> ${jobTitle}</li>
               <li><strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}</li>
+                 <li><strong>Interviewer Link:</strong> ${interviewLink.start_url}</li>
+                  <li><strong>User Link Link:</strong> ${interviewLink.join_url}</li>
               <li><strong>Date & Time:</strong> ${fromUTCString(finalInterviewDate) ? fromUTCString(finalInterviewDate).toLocaleString('en-US') : 'N/A'}</li>
             </ul>
           </body>
           </html>
         `;
-
-        await Promise.all(
-          hrAdminEmails.map(email =>
-            sendEmail({
-              to: email,
-              subject,
-              html
-            })
-          )
-        );
+     
+        // uncomment to send email to all hr and admin
+        // await Promise.all(
+        //   hrAdminEmails.map(email =>
+        //     sendEmail({
+        //       to: email,
+        //       subject,
+        //       html
+        //     })
+        //   )
+        // );
       }
     } catch (notifyError) {
       console.error('Error sending HR/Admin schedule emails:', notifyError);
@@ -295,26 +309,37 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     const candidateEmail = evaluation.candidate_email || evaluation.email;
     const jobTitle = evaluation.job_title || 'Position';
 
+  
+    
+      let interviewLink  = await generateInterViewLink({
+    topic: "INTERVIEW",
+    start_time: interviewDateUTC,
+    duration: process.env.INTERVIEW_TIME_SLOT,
+});
+
     // Send to interviewer
     if (interviewer.email) {
       await sendInterviewAssignmentToInterviewer({
-        interviewerEmail: interviewer.email,
+        // interviewerEmail: interviewer.email,
+        interviewerEmail : 'jaxmorgan001@gmail.com',
         interviewerName: interviewer.full_name || interviewer.email,
         candidateName,
         candidateEmail,
         jobTitle,
-        interviewDate: interviewDateUTC
+        interviewDate: fromUTCString(interviewDateUTC).toLocaleString('en-US'),
+        interViewLink : interviewLink.start_url
       });
     }
 
     // Send to candidate
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
-        candidateEmail,
+        candidateEmail : 'jaidnasim1@gmail.com',
         candidateName,
         jobTitle,
-        interviewDate: interviewDateUTC,
-        interviewerName: interviewer.full_name || interviewer.email
+        interviewDate: fromUTCString(interviewDateUTC).toLocaleString('en-US'),
+        interviewerName: interviewer.full_name || interviewer.email,
+         interviewLink : interviewLink.join_url
       });
     }
 
@@ -360,21 +385,23 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
               <li><strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}</li>
               <li><strong>Job Position:</strong> ${jobTitle}</li>
               <li><strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}</li>
+                <li><strong>User Link :</strong> ${interviewLink.join_url}</li>
+              <li><strong>Interviewer Link:</strong> ${interviewLink.start_url}</li>
               <li><strong>New Date & Time:</strong> ${fromUTCString(finalInterviewDate) ? fromUTCString(finalInterviewDate).toLocaleString('en-US') : 'N/A'}</li>
             </ul>
           </body>
           </html>
         `;
-
-        await Promise.all(
-          hrAdminEmails.map(email =>
-            sendEmail({
-              to: email,
-              subject,
-              html
-            })
-          )
-        );
+         // uncomment to send email to all hr and admin
+        // await Promise.all(
+        //   hrAdminEmails.map(email =>
+        //     sendEmail({
+        //       to: email,
+        //       subject,
+        //       html
+        //     })
+        //   )
+        // );
       }
     } catch (notifyError) {
       console.error('Error sending HR/Admin reschedule emails:', notifyError);

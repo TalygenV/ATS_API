@@ -1,26 +1,29 @@
-const nodemailer = require('nodemailer');
+// const nodemailer = require('nodemailer');
 
-// Email configuration from environment variables
-const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
-const EMAIL_PORT = process.env.EMAIL_PORT || 587;
-const EMAIL_USER = process.env.EMAIL_USER;
-const EMAIL_PASSWORD = process.env.EMAIL_PASSWORD;
-const EMAIL_FROM = process.env.EMAIL_FROM || EMAIL_USER;
+const transporter  = require("./transpoter");
 
-// Create transporter (only if email credentials are configured)
-let transporter = null;
+// // Email configuration from environment variables
+// const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
+// const EMAIL_PORT = process.env.EMAIL_PORT || 587;
+// const EMAIL_USER = process.env.EMAIL_USER;
+// const EMAIL_PASSWORD = process.env.EMAIL_PASSWORD;
+// const EMAIL_FROM = process.env.EMAIL_FROM || EMAIL_USER;
 
-if (EMAIL_USER && EMAIL_PASSWORD) {
-  transporter = nodemailer.createTransport({
-    host: EMAIL_HOST,
-    port: EMAIL_PORT,
-    secure: EMAIL_PORT === 465,
-    auth: {
-      user: EMAIL_USER,
-      pass: EMAIL_PASSWORD
-    }
-  });
-}
+// // Create transporter (only if email credentials are configured)
+// let transporter = null;
+
+// if (EMAIL_USER && EMAIL_PASSWORD) {
+//   transporter = nodemailer.createTransport({
+//     host: EMAIL_HOST,
+//     port: EMAIL_PORT,
+//     secure: EMAIL_PORT === 465,
+//     auth: {
+//       user: EMAIL_USER,
+//       pass: EMAIL_PASSWORD
+//     }
+//   });
+// }
+
 
 /**
  * Send email notification
@@ -41,7 +44,6 @@ async function sendEmail({ to, subject, html, text }) {
 
   try {
     const mailOptions = {
-      from: EMAIL_FROM,
       to,
       subject,
       html,
@@ -74,8 +76,12 @@ async function sendInterviewAssignmentToInterviewer({
   candidateName,
   candidateEmail,
   jobTitle,
-  interviewDate
+  interviewDate,
+  interViewLink
 }) {
+  
+
+ 
   const formattedDate = new Date(interviewDate).toLocaleString('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -112,7 +118,8 @@ async function sendInterviewAssignmentToInterviewer({
             <strong>Candidate Name:</strong> ${candidateName || 'N/A'}<br>
             <strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}<br>
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
-            <strong>Interview Date & Time:</strong> ${formattedDate}
+            <strong>Interview Date & Time:</strong> ${formattedDate}<br>
+            <strong>Interview Link:</strong> ${interViewLink || 'N/A'}<br>
           </div>
           
           <p>Please log in to the ATS system to view the candidate's resume and prepare for the interview.</p>
@@ -148,7 +155,8 @@ async function sendInterviewAssignmentToCandidate({
   candidateName,
   jobTitle,
   interviewDate,
-  interviewerName
+  interviewerName,
+  interviewLink,
 }) {
   const formattedDate = new Date(interviewDate).toLocaleString('en-US', {
     weekday: 'long',
@@ -185,7 +193,8 @@ async function sendInterviewAssignmentToCandidate({
           <div class="info-box">
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
             <strong>Interview Date & Time:</strong> ${formattedDate}<br>
-            <strong>Interviewer:</strong> ${interviewerName || 'TBD'}
+            <strong>Interviewer:</strong> ${interviewerName || 'TBD'}<br>
+                <strong>Meeting Link:</strong> ${interviewLink || 'TBD'}
           </div>
           
           <p>Please make sure to be available at the scheduled time. If you need to reschedule, please contact us as soon as possible.</p>
