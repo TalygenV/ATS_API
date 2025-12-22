@@ -7,7 +7,7 @@ const {
   sendInterviewAssignmentToCandidate
 } = require('../utils/emailService');
 const { toUTCString, fromUTCString, convertResultToUTC } = require('../utils/datetimeUtils');
-const { interviewTimeSlot } = require('../utils/slotMinutes');
+
 
 const router = express.Router();
 
@@ -501,7 +501,7 @@ router.post('/slots/generate', authenticate, authorize('Interviewer'), async (re
 
     const slots = [];
     let currentStart = new Date(startDateTime);
-    const slotMinutes = interviewTimeSlot;
+    const slotMinutes = process.env.INTERVIEW_TIME_SLOT;
 
     while (currentStart < endDateTime) {
       const currentEnd = new Date(currentStart.getTime() + slotMinutes * 60000);

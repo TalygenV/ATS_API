@@ -3,7 +3,7 @@ const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
 const { generateQuestionsFromJD, extractJobDescriptionInfo } = require('../utils/questionGenerator');
 const { convertResultToUTC } = require('../utils/datetimeUtils');
-const { interviewTimeSlot } = require('../utils/slotMinutes');
+
 
 const router = express.Router();
 
@@ -207,7 +207,7 @@ const router = express.Router();
 router.get('/', authenticate, async (req, res) => {
   try {
     let params = [];
-
+    let interviewTimeSlot =  process.env.INTERVIEW_TIME_SLOT;
     // Role check
     const isInterviewer = req.user.role === 'Interviewer';
 
