@@ -113,47 +113,58 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
 }
 
 async function parseResumeWithGroq(resumeText, fileName) {
+  // Validate input
+  if (!resumeText || typeof resumeText !== 'string' || resumeText.trim().length === 0) {
+    throw new Error('Resume text is empty or invalid. Cannot parse empty resume.');
+  }
+
   // Using Groq's llama-3.1-8b-instant model
   const modelName = 'llama-3.1-8b-instant';
   
-  const prompt = `Parse the following resume and extract all relevant information. Return the data in a structured JSON format with the following fields:
+  const prompt = `You are a resume parser. Parse the following resume text and extract all relevant information. You MUST return ONLY a valid JSON object with no additional text, explanations, or markdown formatting.
 
-    - name: Full name of the person
-    - First_Name: First name of the person (extract from the full name, or from the resume if explicitly mentioned)
-    - Last_Name: Last name of the person (extract from the full name, or from the resume if explicitly mentioned)
-    - email: Email address
-    - phone: Phone number
-    - Mobile_Number: Mobile/phone number (same as phone, but ensure it's a mobile number if specified)
-    - Date_Of_Birth: Date of birth in format YYYY-MM-DD or YYYY-MM if only month/year is available, or empty string if not found
-    - location: COMPLETE FULL ADDRESS including street address, city, state/province, country, and zip/postal code if available. Include all address components mentioned in the resume. If only city/state is mentioned, include that but try to get the full address.
-    - skills: Array of technical skills, programming languages, tools, frameworks, and soft skills (e.g., "JavaScript", "Project Management", "React", "Communication")
-    - experience: Array of work experience objects, each with: company, position, duration, description, startDate (format: YYYY-MM or YYYY-MM-DD), endDate (format: YYYY-MM or YYYY-MM-DD or "Present" if current job)
-    - total_experience: Calculate the EXACT total number of years of professional work experience. CRITICAL INSTRUCTIONS:
-      * Extract startDate and endDate for EACH work experience entry
-      * For current jobs, use today's date as endDate
-      * Calculate the duration in years for EACH job: (endDate - startDate) in years (as decimal)
-      * If dates overlap between jobs, DO NOT double-count. Use the earliest start date to the latest end date
-      * If no dates but duration is mentioned (e.g., "2 years"), use that duration
-      * Sum all unique, non-overlapping periods
-      * Convert to decimal years: 1 year = 1.0, 6 months = 0.5, 3 months = 0.25, etc.
-      * Return as a decimal number with 2 decimal places (e.g., 5.50, 3.00, 7.25)
-      * Example: Job 1: Jan 2020 - Dec 2022 (3.0 years), Job 2: Jan 2023 - Present (1.5 years) = Total: 4.50 years
-    - education: Array of education objects, each with: institution, degree, field, year
-    - summary: Professional summary or objective
-    - certifications: Array of certifications
-    - fileName: The original file name
-    
-    IMPORTANT RULES:
-    1. For total_experience: Calculate precisely from dates. If dates are missing, use duration strings. Ensure no double-counting of overlapping periods.
-    2. For location: Extract the COMPLETE address with all available components (street, city, state, country, zip code).
-    3. CRITICAL OUTPUT FORMAT: Your response MUST start with the opening brace { and end with the closing brace }. Do NOT include any text, explanations, comments, or markdown before or after the JSON object. Do NOT use code blocks (\`\`\`json or \`\`\`). Do NOT add any prefix like "Here is the JSON:" or "The parsed data is:". Your ENTIRE response must be ONLY the JSON object itself, nothing else.
-    4. Ensure all special characters in string values are properly escaped (e.g., quotes, newlines, backslashes). Use \\n for newlines, \\" for quotes, \\\\ for backslashes.
-    5. All string values must be properly quoted and escaped. Do not include unescaped control characters or invalid JSON characters.
-    
-    Resume text:
-    ${resumeText}
-    
-    Remember: Your response must be ONLY valid JSON starting with { and ending with }. No other text whatsoever.`;
+Required JSON fields:
+{
+  "name": "Full name of the person",
+  "First_Name": "First name",
+  "Last_Name": "Last name",
+  "email": "Email address or empty string",
+  "phone": "Phone number or empty string",
+  "Mobile_Number": "Mobile/phone number or empty string",
+  "Date_Of_Birth": "YYYY-MM-DD or YYYY-MM or empty string",
+  "location": "Complete full address with all components (street, city, state, country, zip) or empty string",
+  "skills": ["Array", "of", "skills"],
+  "experience": [{
+    "company": "Company name",
+    "position": "Job title",
+    "duration": "Duration string",
+    "description": "Job description",
+    "startDate": "YYYY-MM or YYYY-MM-DD",
+    "endDate": "YYYY-MM or YYYY-MM-DD or 'Present'"
+  }],
+  "total_experience": 5.50,
+  "education": [{
+    "institution": "School/University name",
+    "degree": "Degree name",
+    "field": "Field of study",
+    "year": "Graduation year"
+  }],
+  "summary": "Professional summary or empty string",
+  "certifications": ["Array", "of", "certifications"],
+  "fileName": "Original file name"
+}
+
+CRITICAL INSTRUCTIONS:
+1. Calculate total_experience precisely from work experience dates. Sum all non-overlapping periods in decimal years (e.g., 5.50, 3.25).
+2. Extract complete address for location field with all available components.
+3. If information is not found, use empty string "" for strings or empty array [] for arrays.
+4. Your response MUST be valid JSON only - no text before or after, no markdown, no explanations.
+5. Ensure all special characters are properly escaped in JSON strings.
+
+Resume text to parse:
+${resumeText}
+
+Return ONLY the JSON object, nothing else.`;
 
   let lastError = null;
   
@@ -165,18 +176,41 @@ async function parseResumeWithGroq(resumeText, fileName) {
       return await groq.chat.completions.create({
         messages: [
           {
+            role: 'system',
+            content: 'You are a resume parser. You must respond with ONLY valid JSON. Do not include any text, explanations, or markdown formatting before or after the JSON object.'
+          },
+          {
             role: 'user',
             content: prompt
           }
         ],
         model: modelName,
         temperature: 0.3,
-        max_tokens: 4096
+        max_tokens: 4096,
+        response_format: { type: 'json_object' }
       });
     }, 3, 2000);
     
     const text = result.choices[0]?.message?.content || '';
     console.log(`   ✅ Got response from ${modelName}`);
+
+    // Validate that we received a response
+    if (!text || text.trim().length === 0) {
+      throw new Error('Empty response from Groq API');
+    }
+
+    // Check if response looks like an error message instead of JSON
+    const lowerText = text.trim().toLowerCase();
+    if (lowerText.startsWith('i don\'t') || 
+        lowerText.startsWith('i cannot') || 
+        lowerText.startsWith('i can\'t') ||
+        lowerText.startsWith('sorry') ||
+        lowerText.startsWith('unable') ||
+        lowerText.startsWith('error') ||
+        (!text.includes('{') && !text.includes('['))) {
+      console.error(`   ❌ Non-JSON response detected: ${text.substring(0, 200)}`);
+      throw new Error(`Groq API returned a non-JSON response. The model may not have received valid resume text. Response preview: ${text.substring(0, 200)}`);
+    }
 
       // Clean the response to extract JSON
       let jsonText = text.trim();
@@ -192,7 +226,18 @@ async function parseResumeWithGroq(resumeText, fileName) {
       // Remove any text before the first opening brace (common issue: "However, y..." or "Here is the JSON:")
       const firstBraceIndex = jsonText.indexOf('{');
       if (firstBraceIndex > 0) {
+        console.log(`   ⚠️  Found text before JSON, removing ${firstBraceIndex} characters`);
         jsonText = jsonText.substring(firstBraceIndex);
+      }
+      
+      // If no opening brace found, try to find array start
+      if (firstBraceIndex === -1) {
+        const firstBracketIndex = jsonText.indexOf('[');
+        if (firstBracketIndex > 0) {
+          jsonText = jsonText.substring(firstBracketIndex);
+        } else if (firstBracketIndex === -1) {
+          throw new Error(`No JSON structure found in response. Response starts with: ${text.substring(0, 200)}`);
+        }
       }
       
       // Function to extract JSON by finding matching braces

@@ -230,7 +230,33 @@ const processResumeFile = async (file, jobData) => {
   const mimetype = file.mimetype;
 
   // Extract text from file
-  const resumeText = await extractTextFromFile(filePath, mimetype);
+  let resumeText;
+  try {
+    resumeText = await extractTextFromFile(filePath, mimetype);
+  } catch (extractError) {
+    console.error(`❌ Error extracting text from file ${fileName}:`, extractError.message);
+    // Clean up file before throwing error
+    try {
+      await fsPromises.unlink(filePath);
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    throw new Error(`Failed to extract text from file: ${extractError.message}. The file may be corrupted or in an unsupported format.`);
+  }
+
+  // Validate that text was extracted successfully
+  if (!resumeText || typeof resumeText !== 'string' || resumeText.trim().length === 0) {
+    console.error(`❌ No text extracted from file ${fileName}. File may be empty, corrupted, or contain only images.`);
+    // Clean up file before throwing error
+    try {
+      await fsPromises.unlink(filePath);
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    throw new Error(`No text could be extracted from the file "${fileName}". The file may be empty, corrupted, contain only images, or be in an unsupported format.`);
+  }
+
+  console.log(`📄 Extracted ${resumeText.length} characters from ${fileName}`);
 
   // Parse resume with Gemini
   const parsedData = await parseResumeWithGemini(resumeText, fileName);
