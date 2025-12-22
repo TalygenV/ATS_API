@@ -1,0 +1,1 @@
+export const interviewTimeSlot = 30

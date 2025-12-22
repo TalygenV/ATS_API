@@ -7,6 +7,7 @@ const {
   sendInterviewAssignmentToCandidate
 } = require('../utils/emailService');
 const { toUTCString, fromUTCString, convertResultToUTC } = require('../utils/datetimeUtils');
+const { interviewTimeSlot } = require('../utils/slotMinutes');
 
 const router = express.Router();
 
@@ -464,7 +465,7 @@ router.get('/my-assignments', authenticate, authorize('Interviewer'), async (req
   }
 });
 
-// Generate 45-minute time slots for an interviewer within a time range (Interviewer only)
+// Generate 30-minute time slots for an interviewer within a time range (Interviewer only)
 router.post('/slots/generate', authenticate, authorize('Interviewer'), async (req, res) => {
   try {
     const { date, start_time, end_time } = req.body;
@@ -500,7 +501,7 @@ router.post('/slots/generate', authenticate, authorize('Interviewer'), async (re
 
     const slots = [];
     let currentStart = new Date(startDateTime);
-    const slotMinutes = 45;
+    const slotMinutes = interviewTimeSlot;
 
     while (currentStart < endDateTime) {
       const currentEnd = new Date(currentStart.getTime() + slotMinutes * 60000);
@@ -515,7 +516,7 @@ router.post('/slots/generate', authenticate, authorize('Interviewer'), async (re
     if (slots.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'No 45-minute slots could be generated for the given range'
+        error: `No ${slotMinutes}-minute slots could be generated for the given range`
       });
     }
 
