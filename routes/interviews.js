@@ -860,17 +860,71 @@ router.get('/today-avaiable-interviews', authenticate, requireWriteAccess, async
    
 
     try {
-        const sql = ` select  its.start_time , its.end_time ,users.full_name as interviewer_name,jd.title,ev.candidate_name ,ev.interview_start_url
- from interviewer_time_slots its
- inner join users
-     on its.interviewer_id = users.id 
- inner join candidate_evaluations ev 
-   on its.evaluation_id = ev.id
-inner join job_descriptions jd
-    on ev.job_description_id = jd.id 
- where Date(its.start_time) = utc_date() AND is_booked =1 
+        const sql = ` WITH ranked_slots AS (
+  SELECT
+    its.start_time,
+    its.end_time,
+    users.full_name AS interviewer_name,
+    jd.title,
+    ev.candidate_name,
+    ev.interview_start_url,
+    ROW_NUMBER() OVER (
+      PARTITION BY ev.candidate_name
+      ORDER BY its.start_time DESC
+    ) AS rn
+  FROM interviewer_time_slots its
+  INNER JOIN users
+    ON its.interviewer_id = users.id
+  INNER JOIN candidate_evaluations ev
+    ON its.evaluation_id = ev.id
+  INNER JOIN job_descriptions jd
+    ON ev.job_description_id = jd.id
+  WHERE DATE(its.start_time) = UTC_DATE()
+    AND its.is_booked = 1
+)
+
+SELECT *
+FROM ranked_slots
+WHERE rn = 1
+ORDER BY start_time;
 
 `
+
+
+// SELECT *
+// FROM (
+//   SELECT 
+//     its.id            AS slot_id,
+//     its.start_time,
+//     its.end_time,
+//     its.interviewer_id,
+//     its.is_booked,
+
+//     users.id          AS user_id,
+//     users.full_name        AS interviewer_name,
+//     users.email       AS interviewer_email,
+
+//     ev.id             AS evaluation_id,
+//     ev.status         AS evaluation_status,
+
+//     jd.id             AS job_id,
+//     jd.title          AS job_title,
+
+//     ROW_NUMBER() OVER (
+//       PARTITION BY its.interviewer_id, DATE(its.start_time)
+//       ORDER BY its.start_time DESC
+//     ) AS rn
+//   FROM interviewer_time_slots its
+//   INNER JOIN users
+//     ON its.interviewer_id = users.id
+//   INNER JOIN candidate_evaluations ev
+//     ON its.evaluation_id = ev.id
+//   INNER JOIN job_descriptions jd
+//     ON ev.job_description_id = jd.id
+//   WHERE DATE(its.start_time) = UTC_DATE()
+//     AND its.is_booked = 1
+// ) t
+// WHERE t.rn = 1;
         const interviews = await query(sql);
         
         // Convert datetime fields to UTC
