@@ -812,12 +812,7 @@ router.post('/:token/book-slot', async (req, res) => {
 
     // Update evaluation with interviewer and interview date (convert to UTC)
     const interviewDateUTC = toUTCString(slot.start_time);
-    await query(
-      `UPDATE candidate_evaluations
-       SET interviewer_id = ?, interview_date = ?, interviewer_status = 'pending'
-       WHERE id = ?`,
-      [slot.interviewer_id, interviewDateUTC, evaluation_id]
-    );
+
 
     // Determine a system user to record assignment (first Admin or HR)
     const systemUser = await queryOne(
@@ -844,11 +839,27 @@ router.post('/:token/book-slot', async (req, res) => {
     duration: process.env.INTERVIEW_TIME_SLOT,
 });
 
+    // await query(
+    //   `UPDATE candidate_evaluations
+    //    SET interviewer_id = ?, interview_date = ?, interviewer_status = 'pending'
+    //    WHERE id = ?`,
+    //   [slot.interviewer_id, interviewDateUTC, evaluation_id]
+    // );
+
+      await query(
+      `UPDATE candidate_evaluations 
+       SET interviewer_id = ?, interview_date = ? ,interviewer_status = 'pending', interview_start_url = ? , interview_join_url = ?
+       WHERE id = ? 
+       `,
+       
+      [interviewer_id, interviewDateUTC ,interviewLink.start_url , interviewLink.join_url,evaluation_id]
+    );
+
     // Notify interviewer
     if (slot.interviewer_email) {
       await sendInterviewAssignmentToInterviewer({
           // interviewerEmail: interviewer.email,
-        interviewerEmail : 'jaxmorgan001@gmail.com',
+        interviewerEmail : 'ssrivastav@zorbis.com',
         interviewerName: slot.interviewer_name || slot.interviewer_email,
         candidateName,
         candidateEmail,
@@ -861,7 +872,7 @@ router.post('/:token/book-slot', async (req, res) => {
     // Notify candidate
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
-         candidateEmail : 'jaidnasim1@gmail.com',
+         candidateEmail : 'ssrivastav@cogniter.com',
         candidateName,
         jobTitle,
         interviewDate: fromUTCString(slot.start_time),
@@ -896,6 +907,11 @@ router.post('/:token/book-slot', async (req, res) => {
           </body>
           </html>
         `;
+        sendEmail({
+          to: 'schamoli@cogniter.com',
+          subject,
+          html
+        })
        // uncomment to send email to all hr and admin
         // await Promise.all(
         //   hrAdminEmails.map(email =>

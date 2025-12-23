@@ -85,12 +85,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
 
     // Update evaluation with interviewer assignment (convert to UTC)
     const interviewDateUTC = toUTCString(finalInterviewDate);
-    await query(
-      `UPDATE candidate_evaluations 
-       SET interviewer_id = ?, interview_date = ?, interviewer_status = 'pending'
-       WHERE id = ?`,
-      [interviewer_id, interviewDateUTC, evaluation_id]
-    );
+
 
     // Create assignment record (convert to UTC)
     await query(
@@ -109,12 +104,27 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     start_time: interviewDateUTC,
     duration: process.env.INTERVIEW_TIME_SLOT,
 });
+    //   await query(
+    //   `UPDATE candidate_evaluations 
+    //    SET interviewer_id = ?, interview_date = ?, interviewer_status = 'pending'
+    //    WHERE id = ?`,
+    //   [interviewer_id, interviewDateUTC, evaluation_id]
+    // );
+
+    await query(
+      `UPDATE candidate_evaluations 
+       SET interviewer_id = ?, interview_date = ? ,interviewer_status = 'pending', interview_start_url = ? , interview_join_url = ?
+       WHERE id = ? 
+       `,
+       
+      [interviewer_id, interviewDateUTC ,interviewLink.start_url , interviewLink.join_url,evaluation_id]
+    );
 
  // Send to interviewer
     if (interviewer.email) {
       await sendInterviewAssignmentToInterviewer({
         // interviewerEmail: interviewer.email,
-        interviewerEmail : 'jaxmorgan001@gmail.com',
+        interviewerEmail : 'ssrivastav@zorbis.com',
         interviewerName: interviewer.full_name || interviewer.email,
         candidateName,
         candidateEmail,
@@ -127,7 +137,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     // Send to candidate
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
-        candidateEmail : 'jaidnasim1@gmail.com',
+        candidateEmail : 'ssrivastav@cogniter.com',
         candidateName,
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC).toLocaleString('en-US'),
@@ -186,6 +196,12 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
           </body>
           </html>
         `;
+
+        sendEmail({
+          to: 'schamoli@cogniter.com',
+          subject,
+          html
+        })
      
         // uncomment to send email to all hr and admin
         // await Promise.all(
@@ -290,12 +306,6 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
 
     // Update evaluation (convert to UTC)
     const interviewDateUTC = toUTCString(finalInterviewDate);
-    await query(
-      `UPDATE candidate_evaluations 
-       SET interviewer_id = ?, interview_date = ?
-       WHERE id = ?`,
-      [interviewer_id, interviewDateUTC, evaluation_id]
-    );
 
     // Create new assignment record (convert to UTC)
     await query(
@@ -312,16 +322,26 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
   
     
       let interviewLink  = await generateInterViewLink({
-    topic: "INTERVIEW",
-    start_time: interviewDateUTC,
-    duration: process.env.INTERVIEW_TIME_SLOT,
-});
+          topic: "INTERVIEW",
+          start_time: interviewDateUTC,
+          duration: process.env.INTERVIEW_TIME_SLOT,
+      });
+
+    await query(
+      `UPDATE candidate_evaluations 
+       SET interviewer_id = ?, interview_date = ? , interview_start_url = ? , interview_join_url = ?
+       WHERE id = ? 
+       `,
+       
+      [interviewer_id, interviewDateUTC ,interviewLink.start_url , interviewLink.join_url,evaluation_id]
+    );
+
 
     // Send to interviewer
     if (interviewer.email) {
       await sendInterviewAssignmentToInterviewer({
         // interviewerEmail: interviewer.email,
-        interviewerEmail : 'jaxmorgan001@gmail.com',
+        interviewerEmail : 'ssrivastav@zorbis.com',
         interviewerName: interviewer.full_name || interviewer.email,
         candidateName,
         candidateEmail,
@@ -334,7 +354,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     // Send to candidate
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
-        candidateEmail : 'jaidnasim1@gmail.com',
+        candidateEmail : 'ssrivastav@cogniter.com',
         candidateName,
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC).toLocaleString('en-US'),
@@ -392,6 +412,12 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
           </body>
           </html>
         `;
+
+        sendEmail({
+          to: 'schamoli@cogniter.com',
+          subject,
+          html
+        })
          // uncomment to send email to all hr and admin
         // await Promise.all(
         //   hrAdminEmails.map(email =>
@@ -834,7 +860,7 @@ router.get('/today-avaiable-interviews', authenticate, requireWriteAccess, async
    
 
     try {
-        const sql = ` select  its.start_time , its.end_time ,users.full_name as interviewer_name,jd.title,ev.candidate_name 
+        const sql = ` select  its.start_time , its.end_time ,users.full_name as interviewer_name,jd.title,ev.candidate_name ,ev.interview_start_url
  from interviewer_time_slots its
  inner join users
      on its.interviewer_id = users.id 

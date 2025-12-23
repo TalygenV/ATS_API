@@ -206,16 +206,27 @@ const router = express.Router();
 
 router.get('/', authenticate, async (req, res) => {
   try {
-    let params = [];
-    let interviewTimeSlot =  process.env.INTERVIEW_TIME_SLOT;
-    // Role check
+    const params = [];
+    const interviewTimeSlot = process.env.INTERVIEW_TIME_SLOT;
     const isInterviewer = req.user.role === 'Interviewer';
 
-    // Interviewer restriction
-    const joinCondition = isInterviewer ? ' AND ce.interviewer_id = ?' : '';
-    if (isInterviewer) params.push(req.user.id);
+    /*
+      If interviewer:
+      1️⃣ ce JOIN → interviewer-specific candidates
+      2️⃣ WHERE → job assigned to interviewer
+    */
+    const interviewerJoin = isInterviewer
+      ? ' AND ce.interviewer_id = ?'
+      : '';
 
-   const sql = `
+    if (isInterviewer) {
+      // JOIN filter
+      params.push(req.user.id);
+      // WHERE JSON_CONTAINS
+      params.push(req.user.id);
+    }
+
+    const sql = `
 WITH latest_resumes AS (
   SELECT r1.id
   FROM resumes r1
@@ -233,104 +244,115 @@ WITH latest_resumes AS (
 SELECT 
   jd.*,
 
-  /* Total latest resumes */
+  /* Total resumes (interviewer-specific if interviewer) */
   COUNT(DISTINCT lr.id) AS resume_count,
 
-  /* Interviewer level status */
+  /* Accepted */
   COUNT(DISTINCT CASE 
-    WHEN lr.id IS NOT NULL AND ce.status = 'accepted'
+    WHEN ce.id IS NOT NULL
+     AND lr.id IS NOT NULL
+     AND ce.status = 'accepted'
     THEN ce.email END
   ) AS accepted,
 
+  /* Pending */
   COUNT(DISTINCT CASE 
-    WHEN lr.id IS NOT NULL AND ce.status = 'pending'
+    WHEN ce.id IS NOT NULL
+     AND lr.id IS NOT NULL
+     AND ce.status = 'pending'
     THEN ce.email END
   ) AS pending,
 
+  /* Rejected */
   COUNT(DISTINCT CASE 
-    WHEN lr.id IS NOT NULL AND ce.status = 'rejected'
+    WHEN ce.id IS NOT NULL
+     AND lr.id IS NOT NULL
+     AND ce.status = 'rejected'
     THEN ce.email END
   ) AS rejected,
 
-  /* On Hold (HR overrides interviewer) */
+  /* On Hold */
   COUNT(DISTINCT CASE 
-    WHEN lr.id IS NOT NULL
+    WHEN ce.id IS NOT NULL
+     AND lr.id IS NOT NULL
      AND (
           ce.interviewer_status IN ('on_hold','rejected')
           OR ce.hr_final_status = 'on_hold'
          )
      AND ce.hr_final_status NOT IN ('selected','rejected')
-    THEN ce.email 
-  END) AS onhold,
+    THEN ce.email END
+  ) AS onhold,
 
-  /* HR Final Decisions */
+  /* Final Rejected */
   COUNT(DISTINCT CASE 
-    WHEN lr.id IS NOT NULL AND ce.hr_final_status = 'rejected'
+    WHEN ce.id IS NOT NULL
+     AND lr.id IS NOT NULL
+     AND ce.hr_final_status = 'rejected'
     THEN ce.email END
   ) AS finalRejected,
 
+  /* Final Selected */
   COUNT(DISTINCT CASE 
-    WHEN lr.id IS NOT NULL AND ce.hr_final_status = 'selected'
+    WHEN ce.id IS NOT NULL
+     AND lr.id IS NOT NULL
+     AND ce.hr_final_status = 'selected'
     THEN ce.email END
   ) AS finalSelected,
 
-
-/* ✅ Decision Pending (ONLY past / completed stage, not future scheduled) */
-COUNT(DISTINCT CASE 
-  WHEN lr.id IS NOT NULL
-   AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
-   AND (
-     ce.interviewer_status = 'selected'
-     OR (
-       ce.interview_date IS NOT NULL
-       AND ce.interviewer_feedback IS NULL
-       AND UTC_TIMESTAMP() > DATE_ADD(ce.interview_date, INTERVAL ${interviewTimeSlot} MINUTE)
-     )
-   )
-  THEN ce.email 
-END) AS totalDecisionPending,
-
-  /* Not assigned to interviewer */
+  /* Decision Pending */
   COUNT(DISTINCT CASE 
-    WHEN lr.id IS NOT NULL AND ce.interviewer_id IS NULL
+    WHEN ce.id IS NOT NULL
+     AND lr.id IS NOT NULL
+     AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
+     AND (
+       ce.interviewer_status = 'selected'
+       OR (
+         ce.interview_date IS NOT NULL
+         AND ce.interviewer_feedback IS NULL
+         AND UTC_TIMESTAMP() >
+             DATE_ADD(ce.interview_date, INTERVAL ${interviewTimeSlot} MINUTE)
+       )
+     )
     THEN ce.email END
-  ) AS totalPending,
+  ) AS totalDecisionPending,
 
-  /* Scheduled interview (future + no feedback) */
-COUNT(DISTINCT CASE 
-  WHEN lr.id IS NOT NULL
-   AND ce.interviewer_id IS NOT NULL
-   AND ce.interview_date IS NOT NULL
-   AND ce.interviewer_feedback IS NULL
-   AND ce.interview_date > UTC_TIMESTAMP()
-   AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
-  THEN ce.email END
-) AS scheduledInterview
-
-
+  /* Scheduled Interview */
+  COUNT(DISTINCT CASE 
+    WHEN ce.id IS NOT NULL
+     AND lr.id IS NOT NULL
+     AND ce.interview_date IS NOT NULL
+     AND ce.interviewer_feedback IS NULL
+     AND ce.interview_date > UTC_TIMESTAMP()
+     AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
+    THEN ce.email END
+  ) AS scheduledInterview
 
 FROM job_descriptions jd
 LEFT JOIN candidate_evaluations ce
   ON ce.job_description_id = jd.id
-  ${joinCondition}
+  ${interviewerJoin}
 LEFT JOIN latest_resumes lr
   ON lr.id = ce.resume_id
+
+WHERE
+  ${isInterviewer ? `
+    JSON_CONTAINS(
+      jd.interviewers,
+      JSON_QUOTE(?)
+    )
+  ` : '1=1'}
 
 GROUP BY jd.id
 ORDER BY jd.created_at DESC
 `;
 
-
     const rows = await query(sql, params);
 
-    const parsedJobDescriptions = rows.map(jd => {
-      const parsed = {
-        ...jd,
-        interviewers: jd.interviewers ? JSON.parse(jd.interviewers) : [],
-        resume_count: Number(jd.resume_count) || 0
-      };
-      return convertResultToUTC(parsed);
-    });
+    const parsedJobDescriptions = rows.map(jd => ({
+      ...jd,
+      interviewers: jd.interviewers ? JSON.parse(jd.interviewers) : [],
+      resume_count: Number(jd.resume_count) || 0
+    }));
 
     res.json({
       success: true,
@@ -347,6 +369,7 @@ ORDER BY jd.created_at DESC
     });
   }
 });
+
 
 
 
