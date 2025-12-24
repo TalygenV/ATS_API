@@ -325,7 +325,14 @@ SELECT
      AND ce.interview_date > UTC_TIMESTAMP()
      AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
     THEN ce.email END
-  ) AS scheduledInterview
+  ) AS scheduledInterview , 
+   COUNT(DISTINCT CASE 
+    WHEN ce.id IS NOT NULL
+     AND lr.id IS NOT NULL
+     AND ce.interview_date IS  NULL
+    THEN ce.email END
+  )
+  AS totalPending
 
 FROM job_descriptions jd
 LEFT JOIN candidate_evaluations ce

@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
+const os = require('os');
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess, authorize } = require('../middleware/auth');
 const { sendInterviewFeedbackToHR } = require('../utils/emailService');
@@ -29,12 +30,21 @@ const safeParseJSON = (value, defaultValue = null) => {
 };
 
 // Configure multer for file uploads
+// const getUploadDir = () => {
+//   // Check if running on Netlify (serverless environment)
+//   if (process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL) {
+//     return '/tmp';
+//   }
+//   return path.join(__dirname, '../uploads/resumes');
+// };
+
 const getUploadDir = () => {
   // Check if running on Netlify (serverless environment)
   if (process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL) {
     return '/tmp';
   }
-  return path.join(__dirname, '../uploads/resumes');
+  // Use system temp directory with a subdirectory for organization
+  return path.join(os.tmpdir(), 'ats_uploads', 'resumes');
 };
 
 const storage = multer.diskStorage({

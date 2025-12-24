@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
+const os = require('os');
 const { query, queryOne } = require('../config/database');
 const { generateQuestionsFromJD } = require('../utils/questionGenerator');
 const { extractTextFromFile, parseResumeWithGemini } = require('../utils/resumeParser');
@@ -16,13 +17,22 @@ const { generateInterViewLink } = require('../utils/zoomLinkGenerate');
 const router = express.Router();
 
 // Multer storage for candidate resume uploads (public, no auth)
+// const getUploadDir = () => {
+//   if (process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL) {
+//     return '/tmp';
+//   }
+//   return path.join(__dirname, '../uploads/resumes');
+// };
+// Configure multer for file uploads - save original files with prefix
+// Use /tmp for serverless environments (Netlify), otherwise use system temp directory
 const getUploadDir = () => {
+  // Check if running on Netlify (serverless environment)
   if (process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL) {
     return '/tmp';
   }
-  return path.join(__dirname, '../uploads/resumes');
+  // Use system temp directory with a subdirectory for organization
+  return path.join(os.tmpdir(), 'ats_uploads', 'resumes');
 };
-
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     const uploadDir = getUploadDir();

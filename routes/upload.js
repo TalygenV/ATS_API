@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
+const os = require('os');
 const FormData = require('form-data');
 const axios = require('axios');
 const { extractTextFromFile, parseResumeWithGemini } = require('../utils/resumeParser');
@@ -130,13 +131,14 @@ const safeParseJSON = (value, defaultValue = null) => {
 };
 
 // Configure multer for file uploads - save original files with prefix
-// Use /tmp for serverless environments (Netlify), otherwise use uploads directory
+// Use /tmp for serverless environments (Netlify), otherwise use system temp directory
 const getUploadDir = () => {
   // Check if running on Netlify (serverless environment)
   if (process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL) {
     return '/tmp';
   }
-  return path.join(__dirname, '../uploads/resumes');
+  // Use system temp directory with a subdirectory for organization
+  return path.join(os.tmpdir(), 'ats_uploads', 'resumes');
 };
 
 const storage = multer.diskStorage({

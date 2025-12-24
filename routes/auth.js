@@ -245,4 +245,42 @@ router.get('/users', authenticate, requireWriteAccess, async (req, res) => {
   }
 });
 
+// Get all assigned interviewer list by job discription (for HR/Admin to select interviewers)
+router.get('/already-assigned-interviewer-list/:id', authenticate, requireWriteAccess, async (req, res) => {
+  try {
+     const job_description_id = req.params.id
+    
+    let sql = `SELECT 
+  jd.id AS job_id,
+  u.id AS id,
+  u.full_name,
+  u.email,
+  u.role
+FROM job_descriptions jd
+JOIN users u
+  ON JSON_CONTAINS(jd.interviewers, JSON_QUOTE(u.id))
+WHERE jd.id = ?
+ ORDER BY u.full_name, u.email;
+`
+    const params = [ job_description_id ];
+    
+
+    
+    const users = await query(sql, params);
+    
+    res.json({
+      success: true,
+      count: users.length,
+      data: convertResultToUTC(users)
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch users',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;
