@@ -519,15 +519,15 @@ router.post('/:id/interviewer-feedback', authenticate, authorize('Interviewer'),
         });
       }
       // Validate each rating is between 1 and 10
-      for (const [key, value] of Object.entries(ratings)) {
-        const numValue = Number(value);
-        if (isNaN(numValue) || numValue < 1 || numValue > 10) {
-          return res.status(400).json({
-            success: false,
-            error: `Rating "${key}" must be a number between 1 and 10`
-          });
-        }
-      }
+      // for (const [key, value] of Object.entries(ratings)) {
+      //   const numValue = Number(value);
+      //   if (isNaN(numValue) || numValue < 1 || numValue > 10) {
+      //     return res.status(400).json({
+      //       success: false,
+      //       error: `Rating "${key}" must be a number between 1 and 10`
+      //     });
+      //   }
+      // }
       feedbackJson = JSON.stringify(ratings);
     }
 
@@ -607,7 +607,7 @@ router.post('/:id/interviewer-feedback', authenticate, authorize('Interviewer'),
 router.post('/:id/hr-decision', authenticate, requireWriteAccess, async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, reason } = req.body;
+    const { hrRemarks, status, reason } = req.body;
 
     // Validate status
     const validStatuses = ['selected', 'rejected', 'on_hold'];
@@ -657,8 +657,8 @@ router.post('/:id/hr-decision', authenticate, requireWriteAccess, async (req, re
     }
 
     // Update evaluation with HR final decision
-    let sql = `UPDATE candidate_evaluations SET hr_final_status = ?`;
-    const params = [status];
+    let sql = `UPDATE candidate_evaluations SET hr_final_status = ? , hr_remarks = ?`;
+    const params = [status , hrRemarks];
 
     // Store reason if provided (required for rejected, on_hold, or selected when overriding)
     if (reason && reason.trim()) {
@@ -1193,7 +1193,8 @@ router.get('/:id/timeline', authenticate, async (req, res) => {
         user: null, // Could be enhanced to track who made the decision
         details: {
           status: evaluation.hr_final_status,
-          reason: evaluation.hr_final_reason
+          reason: evaluation.hr_final_reason,
+          hr_remarks : evaluation.hr_remarks
         }
       });
     }
