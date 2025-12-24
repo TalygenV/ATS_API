@@ -306,6 +306,10 @@ router.post('/evaluate-with-qa',  upload.single('resume'), handleMulterError, as
         education_details: matchResults.education_details,
         status: matchResults.status,
         rejection_reason: matchResults.rejection_reason || null,
+         skills: safeParseJSON(parsedData.skills, []),
+        experience: safeParseJSON(parsedData.experience, []),
+        education: safeParseJSON(parsedData.education, []),
+        certifications: safeParseJSON(parsedData.certifications, []),
         candidate_info: {
           First_Name: parsedData.First_Name || '',
           Last_Name: parsedData.Last_Name || '',
