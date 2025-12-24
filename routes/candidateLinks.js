@@ -862,7 +862,7 @@ router.post('/:token/book-slot', async (req, res) => {
        WHERE id = ? 
        `,
        
-      [interviewer_id, interviewDateUTC ,interviewLink.start_url , interviewLink.join_url,evaluation_id]
+      [slot.interviewer_id, interviewDateUTC ,interviewLink.start_url , interviewLink.join_url,evaluation_id]
     );
 
     // Notify interviewer
