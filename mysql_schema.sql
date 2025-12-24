@@ -187,3 +187,12 @@ CREATE TABLE IF NOT EXISTS candidate_links (
   FOREIGN KEY (evaluation_id) REFERENCES candidate_evaluations(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+
+ALTER TABLE `candidate_evaluations` 
+ADD COLUMN `interview_start_url` VARCHAR(1000) NULL DEFAULT NULL AFTER `hr_final_reason`,
+ADD COLUMN `interview_join_url` VARCHAR(500) NULL DEFAULT NULL AFTER `interview_start_url`;
+
+
+ALTER TABLE `candidate_evaluations` 
+ADD COLUMN `hr_remarks` VARCHAR(100) NULL DEFAULT NULL AFTER `hr_final_reason`;
