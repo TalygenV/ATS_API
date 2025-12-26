@@ -448,7 +448,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
   }
 });
 
-// Get interviewer's assigned candidates (Interviewer only)
+// Get interviewer's assigned candidates list for seven days (Interviewer only)
 router.get('/my-assignments', authenticate, authorize('Interviewer'), async (req, res) => {
   try {
     const { status } = req.query;
@@ -474,7 +474,12 @@ router.get('/my-assignments', authenticate, authorize('Interviewer'), async (req
       LEFT JOIN resumes r ON ce.resume_id = r.id
       LEFT JOIN job_descriptions jd ON ce.job_description_id = jd.id
       WHERE ce.interviewer_id = ?
+      AND ce.interview_date >= UTC_TIMESTAMP() - INTERVAL 7 DAY
+     
     `;
+
+    // 
+    //  AND ce.interview_date >= UTC_TIMESTAMP() - INTERVAL 7 DAY
     const params = [req.user.id];
 
     if (status) {
@@ -482,8 +487,8 @@ router.get('/my-assignments', authenticate, authorize('Interviewer'), async (req
       params.push(status);
     }
 
-    sql += ' ORDER BY ce.interview_date ASC, ce.created_at DESC';
-
+    sql += ' ORDER BY ce.interview_date ASC, ce.created_at DESC ';
+      // sql += `LIMIT 1`
     const evaluations = await query(sql, params);
 
     // Parse JSON fields and convert datetime to UTC
@@ -517,6 +522,121 @@ router.get('/my-assignments', authenticate, authorize('Interviewer'), async (req
     });
   }
 });
+
+// Get interviewer's assigned candidates (Interviewer only)
+router.get('/my-assignments/decision', authenticate, authorize('Interviewer'), async (req, res) => {
+  try {
+    const { status,  decision='pending' , limit=10 , page=1 } = req.query;
+      const params = [req.user.id];
+      const offset = ((parseInt(page) - 1) * parseInt(limit)).toString();
+      let whereSql = `WHERE ce.interviewer_id = ?`;
+
+
+if (status) {
+  whereSql += ` AND ce.interviewer_status = ?`;
+  params.push(status);
+}
+
+if (decision === 'complete') {
+  whereSql += `
+    AND ce.interview_date <= UTC_TIMESTAMP()
+    AND ce.interviewer_feedback IS NOT NULL
+     ORDER BY ce.interview_date DESC 
+  `;
+}
+
+if (decision === 'pending') {
+  whereSql += `
+    AND ce.interview_date <= UTC_TIMESTAMP()
+    AND ce.interviewer_feedback IS NULL
+    ORDER BY ce.interview_date ASC, ce.created_at DESC 
+  `;
+}
+
+    let sql = `
+      SELECT 
+        ce.*,
+        JSON_OBJECT(
+          'id', r.id,
+          'name', r.name,
+          'email', r.email,
+          'phone', r.phone,
+          'file_name', r.file_name,
+          'location', r.location,
+          'total_experience', r.total_experience
+        ) as resume,
+        JSON_OBJECT(
+          'id', jd.id,
+          'title', jd.title,
+          'description', jd.description
+        ) as job_description
+      FROM candidate_evaluations ce
+      LEFT JOIN resumes r ON ce.resume_id = r.id
+      LEFT JOIN job_descriptions jd ON ce.job_description_id = jd.id
+      ${whereSql}
+     
+    `;
+
+    const countSql = `
+  SELECT COUNT(*) as total
+    FROM candidate_evaluations ce
+      LEFT JOIN resumes r ON ce.resume_id = r.id
+      LEFT JOIN job_descriptions jd ON ce.job_description_id = jd.id
+      ${whereSql}
+`;
+
+const [countResult] = await query(countSql, params);
+const totalResult = countResult.total;
+const totalPages = Math.ceil(totalResult / limit);
+
+    sql += `LIMIT ? OFFSET ?`
+
+    params.push(limit)
+      params.push(offset)
+    const evaluations = await query(sql, params);
+   
+
+     
+
+    // Parse JSON fields and convert datetime to UTC
+    const parsedEvaluations = evaluations.map(eval => {
+      const parsed = {
+        ...eval,
+        resume: eval.resume ? JSON.parse(eval.resume) : null,
+        job_description: eval.job_description ? JSON.parse(eval.job_description) : null,
+        interviewer_feedback: eval.interviewer_feedback ? JSON.parse(eval.interviewer_feedback) : null
+      };
+      // Parse nested JSON in resume
+      if (parsed.resume) {
+        parsed.resume.skills = parsed.resume.skills ? JSON.parse(parsed.resume.skills) : [];
+        parsed.resume.experience = parsed.resume.experience ? JSON.parse(parsed.resume.experience) : [];
+        parsed.resume.education = parsed.resume.education ? JSON.parse(parsed.resume.education) : [];
+      }
+      return convertResultToUTC(parsed);
+    });
+
+    res.json({
+      success: true,
+      count: parsedEvaluations.length,
+      pagination: {
+    page: parseInt(page),
+    limit: parseInt(limit),
+    total : parseInt(totalResult),
+    totalPages : parseInt(totalPages)
+  },
+  data: parsedEvaluations
+    });
+  } catch (error) {
+    console.error('Error fetching interviewer assignments:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch assignments',
+      message: error.message
+    });
+  }
+});
+
+
 
 // Generate 30-minute time slots for an interviewer within a time range (Interviewer only)
 router.post('/slots/generate', authenticate, authorize('Interviewer'), async (req, res) => {
