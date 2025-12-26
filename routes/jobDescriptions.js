@@ -432,16 +432,16 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
           error: 'Interviewers must be an array'
         });
       }
-      // Validate that all interviewer IDs exist and are Interviewer role
+      // Validate that all interviewer IDs exist, are Interviewer role, and are active
       if (interviewers.length > 0) {
         const placeholders = interviewers.map(() => '?').join(',');
         const validInterviewers = await query(
-          `SELECT id FROM users WHERE id IN (${placeholders}) AND role = 'Interviewer'`,
+          `SELECT id FROM users WHERE id IN (${placeholders}) AND role = 'Interviewer' AND status = 'active'`,
           interviewers
         );
         if (validInterviewers.length !== interviewers.length) {
           return res.status(400).json({
-            error: 'One or more invalid interviewer IDs provided'
+            error: 'One or more invalid interviewer IDs provided or interviewers are inactive'
           });
         }
       }
@@ -498,16 +498,16 @@ router.put('/:id', authenticate, requireWriteAccess, async (req, res) => {
           error: 'Interviewers must be an array'
         });
       }
-      // Validate that all interviewer IDs exist and are Interviewer role
+      // Validate that all interviewer IDs exist, are Interviewer role, and are active
       if (interviewers.length > 0) {
         const placeholders = interviewers.map(() => '?').join(',');
         const validInterviewers = await query(
-          `SELECT id FROM users WHERE id IN (${placeholders}) AND role = 'Interviewer'`,
+          `SELECT id FROM users WHERE id IN (${placeholders}) AND role = 'Interviewer' AND status = 'active'`,
           interviewers
         );
         if (validInterviewers.length !== interviewers.length) {
           return res.status(400).json({
-            error: 'One or more invalid interviewer IDs provided'
+            error: 'One or more invalid interviewer IDs provided or interviewers are inactive'
           });
         }
       }

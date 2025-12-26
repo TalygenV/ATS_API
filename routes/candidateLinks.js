@@ -649,6 +649,7 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
            LEFT JOIN users u ON s.interviewer_id = u.id
            WHERE s.is_booked = 0
              AND s.start_time > UTC_TIMESTAMP()
+             AND u.status = 'active'
              AND s.interviewer_id IN (${placeholders})
              AND (s.job_description_id IS NULL OR s.job_description_id = ?)
            ORDER BY s.start_time ASC`,

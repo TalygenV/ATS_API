@@ -24,16 +24,16 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
       });
     }
 
-    // Validate interviewer exists and is an Interviewer
+    // Validate interviewer exists, is an Interviewer, and is active
     const interviewer = await queryOne(
-      'SELECT id, email, role, full_name FROM users WHERE id = ? AND role = ?',
-      [interviewer_id, 'Interviewer']
+      'SELECT id, email, role, full_name, status FROM users WHERE id = ? AND role = ? AND status = ?',
+      [interviewer_id, 'Interviewer', 'active']
     );
 
     if (!interviewer) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid interviewer ID or user is not an Interviewer'
+        error: 'Invalid interviewer ID, user is not an Interviewer, or interviewer is inactive'
       });
     }
 
@@ -246,16 +246,16 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
       });
     }
 
-    // Validate interviewer exists and is an Interviewer
+    // Validate interviewer exists, is an Interviewer, and is active
     const interviewer = await queryOne(
-      'SELECT id, email, role, full_name FROM users WHERE id = ? AND role = ?',
-      [interviewer_id, 'Interviewer']
+      'SELECT id, email, role, full_name, status FROM users WHERE id = ? AND role = ? AND status = ?',
+      [interviewer_id, 'Interviewer', 'active']
     );
 
     if (!interviewer) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid interviewer ID or user is not an Interviewer'
+        error: 'Invalid interviewer ID, user is not an Interviewer, or interviewer is inactive'
       });
     }
 
@@ -807,6 +807,7 @@ router.get('/available-slots', authenticate, async (req, res) => {
       LEFT JOIN users u ON s.interviewer_id = u.id
       WHERE s.is_booked = 0
         AND s.start_time > UTC_TIMESTAMP()
+        AND u.status = 'active'
     `;
 
     // If a specific interviewer_id is provided, use that

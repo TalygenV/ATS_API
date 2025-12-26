@@ -10,11 +10,13 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   role ENUM('HR', 'Interviewer', 'Admin') NOT NULL,
+  status ENUM('active', 'inactive') DEFAULT 'active',
   full_name VARCHAR(255),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_email (email),
-  INDEX idx_role (role)
+  INDEX idx_role (role),
+  INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create resumes table
@@ -196,3 +198,7 @@ ADD COLUMN `interview_join_url` VARCHAR(500) NULL DEFAULT NULL AFTER `interview_
 
 ALTER TABLE `candidate_evaluations` 
 ADD COLUMN `hr_remarks` VARCHAR(100) NULL DEFAULT NULL AFTER `hr_final_reason`;
+
+ALTER TABLE `users` 
+ADD COLUMN `status` ENUM('active', 'inactive') DEFAULT 'active' AFTER `role`,
+ADD INDEX `idx_status` (`status`);

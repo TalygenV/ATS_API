@@ -30,7 +30,7 @@ const authenticate = async (req, res, next) => {
 
     // Get user from database
     const userData = await queryOne(
-      'SELECT id, email, role, full_name FROM users WHERE id = ?',
+      'SELECT id, email, role, full_name, status FROM users WHERE id = ?',
       [decoded.id]
     );
 
@@ -38,6 +38,14 @@ const authenticate = async (req, res, next) => {
       return res.status(404).json({
         success: false,
         error: 'User profile not found'
+      });
+    }
+
+    // Check if user is active
+    if (userData.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        error: 'Your account has been deactivated. Please contact an administrator.'
       });
     }
 

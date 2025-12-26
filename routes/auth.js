@@ -67,7 +67,7 @@ router.post('/register', authenticate, requireAdmin, async (req, res) => {
 
     // Get created user (without password)
     const userData = await queryOne(
-      'SELECT id, email, role, full_name FROM users WHERE id = ?',
+      'SELECT id, email, role, full_name, status FROM users WHERE id = ?',
       [userId]
     );
 
@@ -100,7 +100,7 @@ router.post('/login', async (req, res) => {
 
     // Get user from database
     const user = await queryOne(
-      'SELECT id, email, password_hash, role, full_name FROM users WHERE email = ?',
+      'SELECT id, email, password_hash, role, full_name, status FROM users WHERE email = ?',
       [email.toLowerCase().trim()]
     );
 
@@ -108,6 +108,14 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({
         success: false,
         error: 'Invalid email or password'
+      });
+    }
+
+    // Check if user is active
+    if (user.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        error: 'Your account has been deactivated. Please contact an administrator.'
       });
     }
 
@@ -213,17 +221,24 @@ router.post('/logout', authenticate, async (req, res) => {
   }
 });
 
-// Get all users (for HR/Admin to select interviewers)
+// Get all users (for HR/Admin to select interviewers and manage users)
 router.get('/users', authenticate, requireWriteAccess, async (req, res) => {
   try {
-    const { role } = req.query;
+    const { role, active_only } = req.query;
     
-    let sql = 'SELECT id, email, role, full_name, created_at FROM users WHERE 1=1';
+    let sql = 'SELECT id, email, role, full_name, status, created_at FROM users WHERE 1=1';
     const params = [];
     
     if (role) {
       sql += ' AND role = ?';
       params.push(role);
+    }
+    
+    // If active_only is true and role is Interviewer, filter to only active interviewers
+    // This is useful for interview assignment dropdowns
+    if (active_only === 'true' && role === 'Interviewer') {
+      sql += ' AND status = ?';
+      params.push('active');
     }
     
     sql += ' ORDER BY full_name, email';
@@ -240,6 +255,100 @@ router.get('/users', authenticate, requireWriteAccess, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch users',
+      message: error.message
+    });
+  }
+});
+
+// Update user (Admin only) - can update password, full_name, and status
+router.put('/users/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password, full_name, status } = req.body;
+
+    // Validate that at least one field is being updated
+    if (!password && full_name === undefined && !status) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least one field (password, full_name, or status) must be provided'
+      });
+    }
+
+    // Validate status if provided
+    if (status && !['active', 'inactive'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid status. Must be "active" or "inactive"'
+      });
+    }
+
+    // Check if user exists
+    const existingUser = await queryOne(
+      'SELECT id, email, role FROM users WHERE id = ?',
+      [id]
+    );
+
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    // Build update query dynamically
+    const updates = [];
+    const params = [];
+
+    if (password) {
+      // Validate password length
+      if (password.length < 6) {
+        return res.status(400).json({
+          success: false,
+          error: 'Password must be at least 6 characters long'
+        });
+      }
+      // Hash password
+      const saltRounds = 10;
+      const passwordHash = await bcrypt.hash(password, saltRounds);
+      updates.push('password_hash = ?');
+      params.push(passwordHash);
+    }
+
+    if (full_name !== undefined) {
+      updates.push('full_name = ?');
+      params.push(full_name || null);
+    }
+
+    if (status) {
+      updates.push('status = ?');
+      params.push(status);
+    }
+
+    // Add user id to params
+    params.push(id);
+
+    // Execute update
+    await query(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = ?`,
+      params
+    );
+
+    // Get updated user (without password)
+    const userData = await queryOne(
+      'SELECT id, email, role, full_name, status, created_at FROM users WHERE id = ?',
+      [id]
+    );
+
+    res.json({
+      success: true,
+      message: 'User updated successfully',
+      data: convertResultToUTC(userData)
+    });
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update user',
       message: error.message
     });
   }
