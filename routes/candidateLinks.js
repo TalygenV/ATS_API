@@ -646,7 +646,7 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
                'full_name', u.full_name
              ) as interviewer
            FROM interviewer_time_slots s
-           LEFT JOIN users u ON s.interviewer_id = u.id
+           LEFT JOIN users u ON s.interviewer_id = u.id AND u.status ='active'
            WHERE s.is_booked = 0
              AND s.start_time > UTC_TIMESTAMP()
              AND u.status = 'active'

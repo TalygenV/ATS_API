@@ -129,7 +129,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
         candidateName,
         candidateEmail,
         jobTitle,
-        interviewDate: fromUTCString(interviewDateUTC).toLocaleString('en-US'),
+        interviewDate: fromUTCString(slot.start_time),
         interViewLink : interviewLink.start_url
       });
     }
@@ -346,7 +346,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
         candidateName,
         candidateEmail,
         jobTitle,
-        interviewDate: fromUTCString(interviewDateUTC).toLocaleString('en-US'),
+        interviewDate: fromUTCString(interviewDateUTC),
         interViewLink : interviewLink.start_url
       });
     }
@@ -357,7 +357,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
         candidateEmail : 'ssrivastav@cogniter.com',
         candidateName,
         jobTitle,
-        interviewDate: fromUTCString(interviewDateUTC).toLocaleString('en-US'),
+        interviewDate: fromUTCString(interviewDateUTC),
         interviewerName: interviewer.full_name || interviewer.email,
          interviewLink : interviewLink.join_url
       });

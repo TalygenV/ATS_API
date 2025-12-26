@@ -224,7 +224,7 @@ router.post('/logout', authenticate, async (req, res) => {
 // Get all users (for HR/Admin to select interviewers and manage users)
 router.get('/users', authenticate, requireWriteAccess, async (req, res) => {
   try {
-    const { role, active_only } = req.query;
+    const { role, active_only = 'true' } = req.query;
     
     let sql = 'SELECT id, email, role, full_name, status, created_at FROM users WHERE 1=1';
     const params = [];
@@ -364,11 +364,12 @@ router.get('/already-assigned-interviewer-list/:id', authenticate, requireWriteA
   u.id AS id,
   u.full_name,
   u.email,
-  u.role
+  u.role,
+  u.status
 FROM job_descriptions jd
 JOIN users u
   ON JSON_CONTAINS(jd.interviewers, JSON_QUOTE(u.id))
-WHERE jd.id = ?
+WHERE jd.id = ? AND u.status ='active' 
  ORDER BY u.full_name, u.email;
 `
     const params = [ job_description_id ];
