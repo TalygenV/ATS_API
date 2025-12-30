@@ -129,7 +129,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
         candidateName,
         candidateEmail,
         jobTitle,
-        interviewDate: fromUTCString(slot.start_time),
+        interviewDate: fromUTCString(interviewDateUTC),
         interViewLink : interviewLink.start_url
       });
     }
@@ -140,7 +140,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
         candidateEmail : 'ssrivastav@cogniter.com',
         candidateName,
         jobTitle,
-        interviewDate: fromUTCString(interviewDateUTC).toLocaleString('en-US'),
+        interviewDate: fromUTCString(interviewDateUTC),
         interviewerName: interviewer.full_name || interviewer.email,
          interviewLink : interviewLink.join_url
       });

@@ -48,15 +48,43 @@ async function alreadyAssignInterView(email) {
     const normalizedEmail = email.toLowerCase().trim();
 
     // Check for  application interview already scheduled
-
+    // const interviewScheduled = await queryOne(
+    //   `SELECT id, created_at 
+    //    FROM candidate_evaluations 
+    //    WHERE email = ? And interviewer_id is not null 
+    //    ORDER BY created_at DESC 
+    //    LIMIT 1`,
+    //   [normalizedEmail]
+    // );
     const interviewScheduled = await queryOne(
-      `SELECT id, created_at 
-       FROM candidate_evaluations 
-       WHERE email = ? And interviewer_id is not null 
-       ORDER BY created_at DESC 
+      `SELECT *
+       FROM candidate_evaluations
+       WHERE email = ?
+         AND interviewer_id IS NOT NULL
+         AND hr_final_status = 'pending'
+       ORDER BY created_at DESC
        LIMIT 1`,
       [normalizedEmail]
     );
+
+    if(!interviewScheduled)
+    {
+      let query = `UPDATE candidate_evaluations
+SET
+  interviewer_id = NULL,
+  interview_date = NULL,
+  interviewer_feedback = NULL,
+  interviewer_status = 'pending',
+  interview_start_url = NULL,
+  interview_join_url = NULL,
+  hr_final_reason = NULL,
+  hr_remarks=NULL,
+  hr_final_status ='pending',
+  updated_at = NOW()
+WHERE email = ?`
+
+     await queryOne(query , [normalizedEmail])
+    }
 
     return !!interviewScheduled;
   } catch (error) {

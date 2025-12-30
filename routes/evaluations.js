@@ -349,7 +349,9 @@ router.get('/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     console.log(`📋 Fetching evaluation ID: ${id} for user: ${req.user.email}`);
+  
 
+    //change id with resume_id 
     const evaluation = await queryOne(
       `SELECT 
         ce.*,
@@ -372,7 +374,7 @@ router.get('/:id', authenticate, async (req, res) => {
       FROM candidate_evaluations ce
       LEFT JOIN resumes r ON ce.resume_id = r.id
       LEFT JOIN job_descriptions jd ON ce.job_description_id = jd.id
-      WHERE ce.id = ?`,
+      WHERE ce.resume_id = ?`,
       [id]
     );
 
@@ -552,6 +554,25 @@ router.post('/:id/interviewer-feedback', authenticate, authorize('Interviewer'),
 
     await query(sql, params);
 
+
+    // here we update history table as well as with feedback
+
+    let sqlForHistory = `UPDATE interview_assignments 
+               SET interviewer_feedback = ?, interviewer_status = ?`;
+    const paramsForHistory = [feedbackJson, status];
+
+    if (status === 'on_hold') {
+      sqlForHistory += ', interviewer_hold_reason = ?';
+      paramsForHistory.push(hold_reason.trim());
+    } else {
+      sqlForHistory += ', interviewer_hold_reason = NULL';
+    }
+
+    sqlForHistory += ' WHERE evaluation_id = ? order by created_at desc limit 1';
+    paramsForHistory.push(id);
+
+    await query(sqlForHistory, paramsForHistory);
+
     // Get updated evaluation with candidate and job details
     const updatedEvaluation = await queryOne(
       `SELECT ce.*,
@@ -571,15 +592,15 @@ router.post('/:id/interviewer-feedback', authenticate, authorize('Interviewer'),
     const hrAdminEmails = hrAdminUsers.map(u => u.email);
 
     // Send email notification to HR/Admin
-    if (hrAdminEmails.length > 0) {
-      await sendInterviewFeedbackToHR({
-        hrAdminEmails,
-        candidateName: updatedEvaluation.candidate_name || updatedEvaluation.name || 'Candidate',
-        jobTitle: updatedEvaluation.job_title || 'Position',
-        interviewerName: req.user.full_name || req.user.email,
-        status
-      });
-    }
+    // if (hrAdminEmails.length > 0) {
+    //   await sendInterviewFeedbackToHR({
+    //     hrAdminEmails,
+    //     candidateName: updatedEvaluation.candidate_name || updatedEvaluation.name || 'Candidate',
+    //     jobTitle: updatedEvaluation.job_title || 'Position',
+    //     interviewerName: req.user.full_name || req.user.email,
+    //     status
+    //   });
+    // }
 
     // Parse JSON fields
     const parsedEvaluation = {
@@ -676,6 +697,24 @@ router.post('/:id/hr-decision', authenticate, requireWriteAccess, async (req, re
     params.push(id);
 
     await query(sql, params);
+
+        // here we update history table as well as with feedback
+
+    let sqlForHistory = `UPDATE interview_assignments 
+               SET hr_final_status = ? , hr_remarks = ?`;
+    const paramsForHistory =  [status , hrRemarks];
+
+    if (status === 'on_hold') {
+      sqlForHistory += ', hr_final_reason = ?';
+      paramsForHistory.push(hold_reason.trim());
+    } else {
+        sqlForHistory += ', hr_final_reason = NULL';
+    }
+
+    sqlForHistory += ' WHERE evaluation_id = ? order by created_at desc limit 1';
+    paramsForHistory.push(id);
+
+    await query(sqlForHistory, paramsForHistory);
 
     // Get updated evaluation
     const updatedEvaluation = await queryOne(
@@ -1061,13 +1100,187 @@ const interviewerId = req.user.id;
 });
 
 // Get candidate process timeline (all authenticated users can view)
+// router.get('/:id/timeline', authenticate, async (req, res) => {
+//   try {
+//     const { id } = req.params;
+
+//     // Get evaluation
+//     const evaluation = await queryOne(
+//       'SELECT * FROM candidate_evaluations WHERE id = ?',
+//       [id]
+//     );
+
+//     if (!evaluation) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Evaluation not found'
+//       });
+//     }
+
+//     // Visibility check: Interviewers can only see their assigned candidates
+//     if (req.user.role === 'Interviewer' && evaluation.interviewer_id !== req.user.id) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Access denied. This candidate is not assigned to you.'
+//       });
+//     }
+
+//     const timeline = [];
+
+//     // 1. Resume uploaded / Evaluation created
+//     timeline.push({
+//       type: 'resume_uploaded',
+//       title: 'Resume Uploaded',
+//       description: 'Candidate resume was uploaded and evaluated',
+//       timestamp: evaluation.created_at,
+//       user: null,
+//       details: {
+//         overall_match: evaluation.overall_match,
+//         skills_match: evaluation.skills_match,
+//         experience_match: evaluation.experience_match,
+//         education_match: evaluation.education_match
+//       }
+//     });
+
+//     // 2. Get interview assignment history
+//     const assignments = await query(
+//       `SELECT ia.*,
+//         JSON_OBJECT(
+//           'id', u1.id,
+//           'email', u1.email,
+//           'full_name', u1.full_name
+//         ) as interviewer,
+//         JSON_OBJECT(
+//           'id', u2.id,
+//           'email', u2.email,
+//           'full_name', u2.full_name
+//         ) as assigned_by_user
+//        FROM interview_assignments ia
+//        LEFT JOIN users u1 ON ia.interviewer_id = u1.id
+//        LEFT JOIN users u2 ON ia.assigned_by = u2.id
+//        WHERE ia.evaluation_id = ?
+//        ORDER BY ia.created_at ASC`,
+//       [id]
+//     );
+
+//     assignments.forEach(assignment => {
+//       const interviewer = assignment.interviewer ? JSON.parse(assignment.interviewer) : null;
+//       const assignedBy = assignment.assigned_by_user ? JSON.parse(assignment.assigned_by_user) : null;
+      
+//       timeline.push({
+//         type: assignment.notes === 'Reassigned' ? 'interviewer_reassigned' : 'interviewer_assigned',
+//         title: assignment.notes === 'Reassigned' ? 'Interviewer Reassigned' : 'Interviewer Assigned',
+//         description: assignment.notes === 'Reassigned' 
+//           ? `Interview reassigned to ${interviewer?.full_name || interviewer?.email || 'Interviewer'}`
+//           : `Assigned to ${interviewer?.full_name || interviewer?.email || 'Interviewer'}`,
+//         timestamp: assignment.created_at,
+//         user: assignedBy,
+//         details: {
+//           interviewer: interviewer,
+//           interview_date: assignment.interview_date,
+//           notes: assignment.notes
+//         }
+//       });
+
+//       // Interview scheduled event
+//       timeline.push({
+//         type: 'interview_scheduled',
+//         title: 'Interview Scheduled',
+//         description: `Interview scheduled for ${fromUTCString(assignment.interview_date) ? fromUTCString(assignment.interview_date).toLocaleString('en-US', {
+//           year: 'numeric',
+//           month: 'long',
+//           day: 'numeric',
+//           hour: '2-digit',
+//           minute: '2-digit'
+//         }) : 'N/A'}`,
+//         timestamp: assignment.interview_date,
+//         user: null,
+//         details: {
+//           interviewer: interviewer,
+//           interview_date: assignment.interview_date
+//         }
+//       });
+//     });
+
+//     // 3. Interviewer feedback submitted
+//     if (evaluation.interviewer_status && evaluation.interviewer_status !== 'pending') {
+//       const interviewer = await queryOne(
+//         'SELECT id, email, full_name FROM users WHERE id = ?',
+//         [evaluation.interviewer_id]
+//       );
+
+//       const feedback = evaluation.interviewer_feedback ? JSON.parse(evaluation.interviewer_feedback) : null;
+
+//       timeline.push({
+//         type: 'feedback_submitted',
+//         title: 'Interview Feedback Submitted',
+//         description: `Interviewer decision: ${evaluation.interviewer_status}`,
+//         timestamp: evaluation.updated_at,
+//         user: interviewer,
+//         details: {
+//           status: evaluation.interviewer_status,
+//           ratings: feedback,
+//           hold_reason: evaluation.interviewer_hold_reason
+//         }
+//       });
+//     }
+
+//     // 4. HR final decision
+//     if (evaluation.hr_final_status && evaluation.hr_final_status !== 'pending') {
+//       // Get who made the decision (we'll use updated_at to determine, but ideally we'd track this)
+//       timeline.push({
+//         type: 'hr_decision',
+//         title: 'HR Final Decision',
+//         description: `Final decision: ${evaluation.hr_final_status}`,
+//         timestamp: evaluation.updated_at,
+//         user: null, // Could be enhanced to track who made the decision
+//         details: {
+//           status: evaluation.hr_final_status,
+//           reason: evaluation.hr_final_reason,
+//           hr_remarks : evaluation.hr_remarks
+//         }
+//       });
+//     }
+
+//     // Sort timeline by timestamp (using UTC)
+//     timeline.sort((a, b) => {
+//       const dateA = fromUTCString(a.timestamp) || new Date(0);
+//       const dateB = fromUTCString(b.timestamp) || new Date(0);
+//       return dateA - dateB;
+//     });
+    
+//     // Convert timeline timestamps to UTC ISO strings
+//     timeline.forEach(item => {
+//       if (item.timestamp) {
+//         const dateObj = fromUTCString(item.timestamp);
+//         if (dateObj) {
+//           item.timestamp = dateObj.toISOString();
+//         }
+//       }
+//     });
+
+//     res.json({
+//       success: true,
+//       data: timeline
+//     });
+//   } catch (error) {
+//     console.error('Error fetching timeline:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: 'Failed to fetch timeline',
+//       message: error.message
+//     });
+//   }
+// });
+
+//new timeline api based on resume id perviosuly it was handle by evaluations
 router.get('/:id/timeline', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
 
     // Get evaluation
     const evaluation = await queryOne(
-      'SELECT * FROM candidate_evaluations WHERE id = ?',
+      'SELECT * FROM candidate_evaluations WHERE resume_id = ?',
       [id]
     );
 
@@ -1104,9 +1317,9 @@ router.get('/:id/timeline', authenticate, async (req, res) => {
     });
 
     // 2. Get interview assignment history
-    const assignments = await query(
-      `SELECT ia.*,
-        JSON_OBJECT(
+ const assignments = await query(
+      `select ia.* ,
+  JSON_OBJECT(
           'id', u1.id,
           'email', u1.email,
           'full_name', u1.full_name
@@ -1116,13 +1329,14 @@ router.get('/:id/timeline', authenticate, async (req, res) => {
           'email', u2.email,
           'full_name', u2.full_name
         ) as assigned_by_user
-       FROM interview_assignments ia
-       LEFT JOIN users u1 ON ia.interviewer_id = u1.id
+from candidate_evaluations ce
+ inner join interview_assignments ia
+   LEFT JOIN users u1 ON ia.interviewer_id = u1.id
        LEFT JOIN users u2 ON ia.assigned_by = u2.id
-       WHERE ia.evaluation_id = ?
-       ORDER BY ia.created_at ASC`,
-      [id]
-    );
+ on ce.id = ia.evaluation_id
+ where ce.resume_id = ?`,
+ [id]
+    )
 
     assignments.forEach(assignment => {
       const interviewer = assignment.interviewer ? JSON.parse(assignment.interviewer) : null;
@@ -1161,47 +1375,79 @@ router.get('/:id/timeline', authenticate, async (req, res) => {
           interview_date: assignment.interview_date
         }
       });
-    });
 
-    // 3. Interviewer feedback submitted
-    if (evaluation.interviewer_status && evaluation.interviewer_status !== 'pending') {
-      const interviewer = await queryOne(
-        'SELECT id, email, full_name FROM users WHERE id = ?',
-        [evaluation.interviewer_id]
-      );
-
-      const feedback = evaluation.interviewer_feedback ? JSON.parse(evaluation.interviewer_feedback) : null;
-
-      timeline.push({
+       // 3. Interviewer feedback submitted
+       if (assignment.interviewer_status && assignment.interviewer_status !== 'pending') {
+            const feedback = assignment.interviewer_feedback ? JSON.parse(assignment.interviewer_feedback) : null;
+                  timeline.push({
         type: 'feedback_submitted',
         title: 'Interview Feedback Submitted',
-        description: `Interviewer decision: ${evaluation.interviewer_status}`,
-        timestamp: evaluation.updated_at,
-        user: interviewer,
+        description: `Interviewer decision: ${assignment.interviewer_status}`,
+        timestamp: assignment.updated_at,
+        user: assignedBy,
         details: {
-          status: evaluation.interviewer_status,
+          status: assignment.interviewer_status,
           ratings: feedback,
-          hold_reason: evaluation.interviewer_hold_reason
+          hold_reason: assignment.interviewer_hold_reason
         }
       });
-    }
+       }
 
-    // 4. HR final decision
-    if (evaluation.hr_final_status && evaluation.hr_final_status !== 'pending') {
-      // Get who made the decision (we'll use updated_at to determine, but ideally we'd track this)
-      timeline.push({
+        if (assignment.hr_final_status && assignment.hr_final_status !== 'pending') {
+              timeline.push({
         type: 'hr_decision',
         title: 'HR Final Decision',
-        description: `Final decision: ${evaluation.hr_final_status}`,
-        timestamp: evaluation.updated_at,
+        description: `Final decision: ${assignment.hr_final_status}`,
+        timestamp: assignment.updated_at,
         user: null, // Could be enhanced to track who made the decision
         details: {
-          status: evaluation.hr_final_status,
-          reason: evaluation.hr_final_reason,
-          hr_remarks : evaluation.hr_remarks
+          status: assignment.hr_final_status,
+          reason: assignment.hr_final_reason,
+          hr_remarks : assignment.hr_remarks
         }
       });
-    }
+        }
+    });
+
+   
+    // if (evaluation.interviewer_status && evaluation.interviewer_status !== 'pending') {
+    //   const interviewer = await queryOne(
+    //     'SELECT id, email, full_name FROM users WHERE id = ?',
+    //     [evaluation.interviewer_id]
+    //   );
+
+    //   const feedback = evaluation.interviewer_feedback ? JSON.parse(evaluation.interviewer_feedback) : null;
+
+    //   timeline.push({
+    //     type: 'feedback_submitted',
+    //     title: 'Interview Feedback Submitted',
+    //     description: `Interviewer decision: ${evaluation.interviewer_status}`,
+    //     timestamp: evaluation.updated_at,
+    //     user: interviewer,
+    //     details: {
+    //       status: evaluation.interviewer_status,
+    //       ratings: feedback,
+    //       hold_reason: evaluation.interviewer_hold_reason
+    //     }
+    //   });
+    // }
+
+    // 4. HR final decision
+    // if (evaluation.hr_final_status && evaluation.hr_final_status !== 'pending') {
+     
+    //   timeline.push({
+    //     type: 'hr_decision',
+    //     title: 'HR Final Decision',
+    //     description: `Final decision: ${evaluation.hr_final_status}`,
+    //     timestamp: evaluation.updated_at,
+    //     user: null, // Could be enhanced to track who made the decision
+    //     details: {
+    //       status: evaluation.hr_final_status,
+    //       reason: evaluation.hr_final_reason,
+    //       hr_remarks : evaluation.hr_remarks
+    //     }
+    //   });
+    // }
 
     // Sort timeline by timestamp (using UTC)
     timeline.sort((a, b) => {

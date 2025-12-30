@@ -202,3 +202,12 @@ ADD COLUMN `hr_remarks` VARCHAR(100) NULL DEFAULT NULL AFTER `hr_final_reason`;
 ALTER TABLE `users` 
 ADD COLUMN `status` ENUM('active', 'inactive') DEFAULT 'active' AFTER `role`,
 ADD INDEX `idx_status` (`status`);
+
+
+ALTER TABLE `interview_assignments` 
+ADD COLUMN `interviewer_feedback` JSON NULL DEFAULT NULL AFTER `updated_at`,
+ADD COLUMN `interviewer_status` ENUM('pending', 'selected', 'rejected', 'on_hold') NULL DEFAULT 'pending' AFTER `interviewer_feedback`,
+ADD COLUMN `interviewer_hold_reason` TEXT NULL DEFAULT NULL AFTER `interviewer_status`,
+ADD COLUMN `hr_final_status` ENUM('pending', 'selected', 'rejected', 'on_hold') NULL DEFAULT 'pending' AFTER `interviewer_hold_reason`,
+ADD COLUMN `hr_final_reason` TEXT NULL DEFAULT NULL AFTER `hr_final_status`,
+ADD COLUMN `hr_remarks` VARCHAR(100) NULL DEFAULT NULL AFTER `hr_final_reason`;
