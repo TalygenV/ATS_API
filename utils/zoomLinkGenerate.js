@@ -36,6 +36,7 @@ const generateInterViewLink = async (meetingDetails) => {
         const meetingConfig = {
             topic: meetingDetails.topic,
             type: 2, // Scheduled meeting
+            timezone: "UTC", // ✅ REQUIRED
             start_time: meetingDetails.start_time, // ISO 8601 format, e.g., '2025-02-15T10:00:00Z'
             duration: meetingDetails.duration, // minutes
             password: '45#$F^HBAS', // ensure max 10

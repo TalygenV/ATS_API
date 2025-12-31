@@ -216,7 +216,7 @@ router.get('/', authenticate, async (req, res) => {
       2️⃣ WHERE → job assigned to interviewer
     */
     const interviewerJoin = isInterviewer
-      ? ' AND ce.interviewer_id = ?'
+      ? ' AND id.interviewer_id = ?'
       : '';
 
     if (isInterviewer) {
@@ -276,7 +276,7 @@ SELECT
     WHEN ce.id IS NOT NULL
      AND lr.id IS NOT NULL
      AND (
-          ce.interviewer_status IN ('on_hold','rejected')
+          id.interviewer_status IN ('on_hold','rejected')
           OR ce.hr_final_status = 'on_hold'
          )
      AND ce.hr_final_status NOT IN ('selected','rejected')
@@ -305,12 +305,12 @@ SELECT
      AND lr.id IS NOT NULL
      AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
      AND (
-       ce.interviewer_status = 'selected'
+       id.interviewer_status = 'selected'
        OR (
-         ce.interview_date IS NOT NULL
-         AND ce.interviewer_feedback IS NULL
+         its.start_time IS NOT NULL
+         AND id.interviewer_feedback IS NULL
          AND UTC_TIMESTAMP() >
-             DATE_ADD(ce.interview_date, INTERVAL ${interviewTimeSlot} MINUTE)
+             DATE_ADD(its.start_time, INTERVAL ${interviewTimeSlot} MINUTE)
        )
      )
     THEN ce.email END
@@ -320,16 +320,16 @@ SELECT
   COUNT(DISTINCT CASE 
     WHEN ce.id IS NOT NULL
      AND lr.id IS NOT NULL
-     AND ce.interview_date IS NOT NULL
-     AND ce.interviewer_feedback IS NULL
-     AND ce.interview_date > UTC_TIMESTAMP()
+     AND its.start_time IS NOT NULL
+     AND id.interviewer_feedback IS NULL
+     AND its.start_time > UTC_TIMESTAMP()
      AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
     THEN ce.email END
   ) AS scheduledInterview , 
    COUNT(DISTINCT CASE 
     WHEN ce.id IS NOT NULL
      AND lr.id IS NOT NULL
-     AND ce.interview_date IS  NULL
+     AND its.start_time IS  NULL
     THEN ce.email END
   )
   AS totalPending
@@ -337,7 +337,13 @@ SELECT
 FROM job_descriptions jd
 LEFT JOIN candidate_evaluations ce
   ON ce.job_description_id = jd.id
+
+LEFT JOIN interview_details id
+  ON id.candidate_evaluations_id = ce.id
   ${interviewerJoin}
+LEFT JOIN interviewer_time_slots its
+  ON its.id = id.interviewer_time_slots_id
+
 LEFT JOIN latest_resumes lr
   ON lr.id = ce.resume_id
 

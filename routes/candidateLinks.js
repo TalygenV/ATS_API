@@ -850,20 +850,19 @@ router.post('/:token/book-slot', async (req, res) => {
     duration: process.env.INTERVIEW_TIME_SLOT,
 });
 
-    // await query(
-    //   `UPDATE candidate_evaluations
-    //    SET interviewer_id = ?, interview_date = ?, interviewer_status = 'pending'
-    //    WHERE id = ?`,
-    //   [slot.interviewer_id, interviewDateUTC, evaluation_id]
-    // );
-
-      await query(
+    // Update candidate_evaluations with interview links (shared for all interviewers)
+    await query(
       `UPDATE candidate_evaluations 
-       SET interviewer_id = ?, interview_date = ? ,interviewer_status = 'pending', interview_start_url = ? , interview_join_url = ?
-       WHERE id = ? 
-       `,
-       
-      [slot.interviewer_id, interviewDateUTC ,interviewLink.start_url , interviewLink.join_url,evaluation_id]
+       SET interview_start_url = ?, interview_join_url = ?
+       WHERE id = ?`,
+      [interviewLink.start_url, interviewLink.join_url, evaluation_id]
+    );
+
+    // Create interview_details record for this assignment
+    await query(
+      `INSERT INTO interview_details (candidate_evaluations_id, interviewer_time_slots_id, interviewer_id, interviewer_status)
+       VALUES (?, ?, ?, 'pending')`,
+      [evaluation_id, slot_id, slot.interviewer_id]
     );
 
     // Notify interviewer

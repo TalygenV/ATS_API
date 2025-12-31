@@ -211,3 +211,40 @@ ADD COLUMN `interviewer_hold_reason` TEXT NULL DEFAULT NULL AFTER `interviewer_s
 ADD COLUMN `hr_final_status` ENUM('pending', 'selected', 'rejected', 'on_hold') NULL DEFAULT 'pending' AFTER `interviewer_hold_reason`,
 ADD COLUMN `hr_final_reason` TEXT NULL DEFAULT NULL AFTER `hr_final_status`,
 ADD COLUMN `hr_remarks` VARCHAR(100) NULL DEFAULT NULL AFTER `hr_final_reason`;
+
+
+
+
+
+CREATE TABLE `ats_system_local`.`interview_details` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `candidate_evaluations_id` INT NOT NULL,
+  `interviewer_time_slots_id` INT NULL,
+  `interviewer_id` VARCHAR(36) NULL,
+  `interviewer_feedback` JSON NULL,
+  `interviewer_status` ENUM('pending', 'selected', 'rejected', 'on_hold') NULL DEFAULT 'pending',
+  `interviewer_hold_reason` TEXT NULL DEFAULT NULL,
+  PRIMARY KEY (`id`));
+
+
+  ALTER TABLE `ats_system_local`.`candidate_evaluations` 
+DROP FOREIGN KEY `candidate_evaluations_ibfk_3`;
+ALTER TABLE `ats_system_local`.`candidate_evaluations` 
+DROP COLUMN `interviewer_hold_reason`,
+DROP COLUMN `interviewer_status`,
+DROP COLUMN `interviewer_feedback`,
+DROP COLUMN `interview_date`,
+DROP COLUMN `interviewer_id`,
+DROP INDEX `idx_interview_date` ,
+DROP INDEX `idx_interviewer_status` ,
+DROP INDEX `idx_interviewer_id` ;
+;
+
+ALTER TABLE `ats_system_local`.`interview_details` 
+CHANGE COLUMN `id` `id` BIGINT NOT NULL ;
+
+ALTER TABLE `ats_system_local`.`interview_details` 
+CHANGE COLUMN `interviewer_id` `interviewer_id` VARCHAR(36) NULL DEFAULT NULL ;
+
+ALTER TABLE `ats_system_local`.`interview_details` 
+CHANGE COLUMN `id` `id` BIGINT NOT NULL AUTO_INCREMENT ;

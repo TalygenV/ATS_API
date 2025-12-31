@@ -1,4 +1,4 @@
-const { queryOne } = require('../config/database');
+const { queryOne, query } = require('../config/database');
 
 /**
  * Check if a candidate has already applied within the last 6 months
@@ -47,48 +47,79 @@ async function alreadyAssignInterView(email) {
     // Normalize email to lowercase for consistency
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Check for  application interview already scheduled
-    // const interviewScheduled = await queryOne(
-    //   `SELECT id, created_at 
-    //    FROM candidate_evaluations 
-    //    WHERE email = ? And interviewer_id is not null 
-    //    ORDER BY created_at DESC 
-    //    LIMIT 1`,
-    //   [normalizedEmail]
-    // );
+    // Check if candidate has an interview already scheduled using interview_details table
     const interviewScheduled = await queryOne(
-      `SELECT *
-       FROM candidate_evaluations
-       WHERE email = ?
-         AND interviewer_id IS NOT NULL
-         AND hr_final_status = 'pending'
-       ORDER BY created_at DESC
+      `SELECT ce.*
+       FROM candidate_evaluations ce
+       INNER JOIN interview_details id ON ce.id = id.candidate_evaluations_id
+       WHERE ce.email = ?
+         AND ce.hr_final_status = 'pending'
+       ORDER BY ce.created_at DESC
        LIMIT 1`,
       [normalizedEmail]
     );
 
+    // If no interview scheduled, clean up any orphaned data
     if(!interviewScheduled)
     {
-      let query = `UPDATE candidate_evaluations
-SET
-  interviewer_id = NULL,
-  interview_date = NULL,
-  interviewer_feedback = NULL,
-  interviewer_status = 'pending',
-  interview_start_url = NULL,
-  interview_join_url = NULL,
-  hr_final_reason = NULL,
-  hr_remarks=NULL,
-  hr_final_status ='pending',
-  updated_at = NOW()
-WHERE email = ?`
+      // Get evaluations that might need cleanup
+      const evaluationsToClean = await query(
+        `SELECT ce.id
+         FROM candidate_evaluations ce
+         WHERE ce.email = ?
+           AND ce.hr_final_status = 'pending'`,
+        [normalizedEmail]
+      );
 
-     await queryOne(query , [normalizedEmail])
+      // Clean up interview_details and free slots for these evaluations
+      for (const eval of evaluationsToClean) {
+        // Get interview_details for this evaluation
+        const interviewDetails = await query(
+          `SELECT id, interviewer_time_slots_id 
+           FROM interview_details 
+           WHERE candidate_evaluations_id = ?`,
+          [eval.id]
+        );
+
+        // Free old slots
+        if (interviewDetails.length > 0) {
+          const slotIds = interviewDetails.map(detail => detail.interviewer_time_slots_id).filter(Boolean);
+          if (slotIds.length > 0) {
+            await query(
+              `UPDATE interviewer_time_slots 
+               SET is_booked = 0, evaluation_id = NULL 
+               WHERE id IN (${slotIds.map(() => '?').join(',')})`,
+              slotIds
+            );
+          }
+
+          // Delete interview_details
+          await query(
+            `DELETE FROM interview_details 
+             WHERE candidate_evaluations_id = ?`,
+            [eval.id]
+          );
+        }
+
+        // Clean up candidate_evaluations fields that still exist
+        await query(
+          `UPDATE candidate_evaluations
+           SET
+             interview_start_url = NULL,
+             interview_join_url = NULL,
+             hr_final_reason = NULL,
+             hr_remarks = NULL,
+             hr_final_status = 'pending',
+             updated_at = NOW()
+           WHERE id = ?`,
+          [eval.id]
+        );
+      }
     }
 
     return !!interviewScheduled;
   } catch (error) {
-    console.error('Error checking for recent application:', error);
+    console.error('Error checking for interview assignment:', error);
     // On error, allow the application to proceed (fail open)
     return false;
   }

@@ -56,6 +56,34 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
       });
     }
 
+    // Step 1: Cancel old assignments - Get all existing interview_details for this evaluation
+    const oldInterviewDetails = await query(
+      `SELECT id, interviewer_time_slots_id 
+       FROM interview_details 
+       WHERE candidate_evaluations_id = ?`,
+      [evaluation_id]
+    );
+
+    // Step 2: Free old slots (set is_booked = 0, evaluation_id = NULL)
+    if (oldInterviewDetails.length > 0) {
+      const oldSlotIds = oldInterviewDetails.map(detail => detail.interviewer_time_slots_id).filter(Boolean);
+      if (oldSlotIds.length > 0) {
+        await query(
+          `UPDATE interviewer_time_slots 
+           SET is_booked = 0, evaluation_id = NULL 
+           WHERE id IN (${oldSlotIds.map(() => '?').join(',')})`,
+          oldSlotIds
+        );
+      }
+    }
+
+    // Step 3: Delete all existing interview_details for this evaluation
+    await query(
+      `DELETE FROM interview_details 
+       WHERE candidate_evaluations_id = ?`,
+      [evaluation_id]
+    );
+
     let finalInterviewDate = interview_date;
 
     // If HR selected a predefined slot, mark it booked and use its start_time
@@ -83,42 +111,43 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
       finalInterviewDate = slot.start_time;
     }
 
-    // Update evaluation with interviewer assignment (convert to UTC)
+    // Convert interview date to UTC
     const interviewDateUTC = toUTCString(finalInterviewDate);
 
+    // Generate interview link
+    const interviewLink = await generateInterViewLink({
+      topic: "INTERVIEW",
+      start_time: interviewDateUTC,
+      duration: process.env.INTERVIEW_TIME_SLOT,
+    });
+
+    // Update candidate_evaluations with interview links (shared link for all interviewers)
+    await query(
+      `UPDATE candidate_evaluations 
+       SET interview_start_url = ?, interview_join_url = ?
+       WHERE id = ?`,
+      [interviewLink.start_url, interviewLink.join_url, evaluation_id]
+    );
 
     // Create assignment record (convert to UTC)
+    const assignmentNote = oldInterviewDetails.length > 0 ? 'Reassigned' : null;
     await query(
       `INSERT INTO interview_assignments (evaluation_id, interviewer_id, interview_date, assigned_by, notes)
        VALUES (?, ?, ?, ?, ?)`,
-      [evaluation_id, interviewer_id, interviewDateUTC, req.user.id, null]
+      [evaluation_id, interviewer_id, interviewDateUTC, req.user.id, assignmentNote]
+    );
+
+    // Create interview_details record (using interview_details table structure)
+    await query(
+      `INSERT INTO interview_details (candidate_evaluations_id, interviewer_time_slots_id, interviewer_id, interviewer_status)
+       VALUES (?, ?, ?, 'pending')`,
+      [evaluation_id, slot_id, interviewer_id]
     );
 
     // Send email notifications
     const candidateName = evaluation.candidate_name || evaluation.name || 'Candidate';
     const candidateEmail = evaluation.candidate_email || evaluation.email;
     const jobTitle = evaluation.job_title || 'Position';
-
-          let interviewLink  = await generateInterViewLink({
-    topic: "INTERVIEW",
-    start_time: interviewDateUTC,
-    duration: process.env.INTERVIEW_TIME_SLOT,
-});
-    //   await query(
-    //   `UPDATE candidate_evaluations 
-    //    SET interviewer_id = ?, interview_date = ?, interviewer_status = 'pending'
-    //    WHERE id = ?`,
-    //   [interviewer_id, interviewDateUTC, evaluation_id]
-    // );
-
-    await query(
-      `UPDATE candidate_evaluations 
-       SET interviewer_id = ?, interview_date = ? ,interviewer_status = 'pending', interview_start_url = ? , interview_join_url = ?
-       WHERE id = ? 
-       `,
-       
-      [interviewer_id, interviewDateUTC ,interviewLink.start_url , interviewLink.join_url,evaluation_id]
-    );
 
  // Send to interviewer
     if (interviewer.email) {
@@ -147,23 +176,47 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     }
 
 
-    // Get updated evaluation
+    // Get updated evaluation with interview details
     const updatedEvaluation = await queryOne(
-      `SELECT ce.*,
+      `SELECT ce.*
+       FROM candidate_evaluations ce
+       WHERE ce.id = ?`,
+      [evaluation_id]
+    );
+
+    // Get interview details for this evaluation
+    const interviewDetails = await query(
+      `SELECT 
+        id.id,
+        id.interviewer_id,
+        id.interviewer_status,
+        id.interviewer_feedback,
+        id.interviewer_hold_reason,
+        its.start_time as interview_date,
+        its.end_time as interview_end_time,
         JSON_OBJECT(
           'id', u.id,
           'email', u.email,
           'full_name', u.full_name
         ) as interviewer
-       FROM candidate_evaluations ce
-       LEFT JOIN users u ON ce.interviewer_id = u.id
-       WHERE ce.id = ?`,
+      FROM interview_details id
+      INNER JOIN interviewer_time_slots its ON id.interviewer_time_slots_id = its.id
+      LEFT JOIN users u ON id.interviewer_id COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci
+      WHERE id.candidate_evaluations_id = ?
+      ORDER BY its.start_time ASC`,
       [evaluation_id]
     );
 
+    // Parse interview details
+    const parsedInterviewDetails = interviewDetails.map(detail => ({
+      ...detail,
+      interviewer: detail.interviewer ? JSON.parse(detail.interviewer) : null,
+      interviewer_feedback: detail.interviewer_feedback ? JSON.parse(detail.interviewer_feedback) : null
+    }));
+
     const parsedEvaluation = {
       ...updatedEvaluation,
-      interviewer: updatedEvaluation.interviewer ? JSON.parse(updatedEvaluation.interviewer) : null
+      interview_details: convertResultToUTC(parsedInterviewDetails)
     };
     
     // Convert datetime fields to UTC
@@ -278,6 +331,34 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
       });
     }
 
+    // Step 1: Cancel old assignments - Get all existing interview_details for this evaluation
+    const oldInterviewDetails = await query(
+      `SELECT id, interviewer_time_slots_id 
+       FROM interview_details 
+       WHERE candidate_evaluations_id = ?`,
+      [evaluation_id]
+    );
+
+    // Step 2: Free old slots (set is_booked = 0, evaluation_id = NULL)
+    if (oldInterviewDetails.length > 0) {
+      const oldSlotIds = oldInterviewDetails.map(detail => detail.interviewer_time_slots_id).filter(Boolean);
+      if (oldSlotIds.length > 0) {
+        await query(
+          `UPDATE interviewer_time_slots 
+           SET is_booked = 0, evaluation_id = NULL 
+           WHERE id IN (${oldSlotIds.map(() => '?').join(',')})`,
+          oldSlotIds
+        );
+      }
+    }
+
+    // Step 3: Delete all existing interview_details for this evaluation
+    await query(
+      `DELETE FROM interview_details 
+       WHERE candidate_evaluations_id = ?`,
+      [evaluation_id]
+    );
+
     let finalInterviewDate = interview_date;
 
     if (slot_id) {
@@ -304,37 +385,43 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
       finalInterviewDate = slot.start_time;
     }
 
-    // Update evaluation (convert to UTC)
+    // Convert interview date to UTC
     const interviewDateUTC = toUTCString(finalInterviewDate);
 
-    // Create new assignment record (convert to UTC)
+    // Generate interview link
+    const interviewLink = await generateInterViewLink({
+      topic: "INTERVIEW",
+      start_time: interviewDateUTC,
+      duration: process.env.INTERVIEW_TIME_SLOT,
+    });
+
+    // Update candidate_evaluations with interview links (shared link for all interviewers)
+    await query(
+      `UPDATE candidate_evaluations 
+       SET interview_start_url = ?, interview_join_url = ?
+       WHERE id = ?`,
+      [interviewLink.start_url, interviewLink.join_url, evaluation_id]
+    );
+
+    // Step 4: Create new assignment record (convert to UTC)
+    const assignmentNote = oldInterviewDetails.length > 0 ? 'Reassigned' : 'Assigned';
     await query(
       `INSERT INTO interview_assignments (evaluation_id, interviewer_id, interview_date, assigned_by, notes)
        VALUES (?, ?, ?, ?, ?)`,
-      [evaluation_id, interviewer_id, interviewDateUTC, req.user.id, 'Reassigned']
+      [evaluation_id, interviewer_id, interviewDateUTC, req.user.id, assignmentNote]
+    );
+
+    // Step 5: Create new interview_details record
+    await query(
+      `INSERT INTO interview_details (candidate_evaluations_id, interviewer_time_slots_id, interviewer_id, interviewer_status)
+       VALUES (?, ?, ?, 'pending')`,
+      [evaluation_id, slot_id, interviewer_id]
     );
 
     // Send email notifications
     const candidateName = evaluation.candidate_name || evaluation.name || 'Candidate';
     const candidateEmail = evaluation.candidate_email || evaluation.email;
     const jobTitle = evaluation.job_title || 'Position';
-
-  
-    
-      let interviewLink  = await generateInterViewLink({
-          topic: "INTERVIEW",
-          start_time: interviewDateUTC,
-          duration: process.env.INTERVIEW_TIME_SLOT,
-      });
-
-    await query(
-      `UPDATE candidate_evaluations 
-       SET interviewer_id = ?, interview_date = ? , interview_start_url = ? , interview_join_url = ?
-       WHERE id = ? 
-       `,
-       
-      [interviewer_id, interviewDateUTC ,interviewLink.start_url , interviewLink.join_url,evaluation_id]
-    );
 
 
     // Send to interviewer
@@ -363,23 +450,47 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
       });
     }
 
-    // Get updated evaluation
+    // Get updated evaluation with interview details
     const updatedEvaluation = await queryOne(
-      `SELECT ce.*,
+      `SELECT ce.*
+       FROM candidate_evaluations ce
+       WHERE ce.id = ?`,
+      [evaluation_id]
+    );
+
+    // Get interview details for this evaluation
+    const interviewDetails = await query(
+      `SELECT 
+        id.id,
+        id.interviewer_id,
+        id.interviewer_status,
+        id.interviewer_feedback,
+        id.interviewer_hold_reason,
+        its.start_time as interview_date,
+        its.end_time as interview_end_time,
         JSON_OBJECT(
           'id', u.id,
           'email', u.email,
           'full_name', u.full_name
         ) as interviewer
-       FROM candidate_evaluations ce
-       LEFT JOIN users u ON ce.interviewer_id = u.id
-       WHERE ce.id = ?`,
+      FROM interview_details id
+      INNER JOIN interviewer_time_slots its ON id.interviewer_time_slots_id = its.id
+      LEFT JOIN users u ON id.interviewer_id COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci
+      WHERE id.candidate_evaluations_id = ?
+      ORDER BY its.start_time ASC`,
       [evaluation_id]
     );
 
+    // Parse interview details
+    const parsedInterviewDetails = interviewDetails.map(detail => ({
+      ...detail,
+      interviewer: detail.interviewer ? JSON.parse(detail.interviewer) : null,
+      interviewer_feedback: detail.interviewer_feedback ? JSON.parse(detail.interviewer_feedback) : null
+    }));
+
     const parsedEvaluation = {
       ...updatedEvaluation,
-      interviewer: updatedEvaluation.interviewer ? JSON.parse(updatedEvaluation.interviewer) : null
+      interview_details: convertResultToUTC(parsedInterviewDetails)
     };
     
     // Convert datetime fields to UTC
@@ -456,6 +567,12 @@ router.get('/my-assignments', authenticate, authorize('Interviewer'), async (req
     let sql = `
       SELECT 
         ce.*,
+        id.id as interview_details_id,
+        id.interviewer_status,
+        id.interviewer_feedback,
+        id.interviewer_hold_reason,
+        its.start_time as interview_date,
+        its.end_time as interview_end_time,
         JSON_OBJECT(
           'id', r.id,
           'name', r.name,
@@ -471,24 +588,23 @@ router.get('/my-assignments', authenticate, authorize('Interviewer'), async (req
           'description', jd.description
         ) as job_description
       FROM candidate_evaluations ce
+      INNER JOIN interview_details id ON ce.id = id.candidate_evaluations_id
+      INNER JOIN interviewer_time_slots its ON id.interviewer_time_slots_id = its.id
       LEFT JOIN resumes r ON ce.resume_id = r.id
       LEFT JOIN job_descriptions jd ON ce.job_description_id = jd.id
-      WHERE ce.interviewer_id = ?
-      AND ce.interview_date >= UTC_TIMESTAMP() - INTERVAL 7 DAY
-     
+      WHERE id.interviewer_id COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
+      AND its.start_time >= UTC_TIMESTAMP() - INTERVAL 7 DAY
     `;
 
-    // 
-    //  AND ce.interview_date >= UTC_TIMESTAMP() - INTERVAL 7 DAY
     const params = [req.user.id];
 
     if (status) {
-      sql += ' AND ce.interviewer_status = ?';
+      sql += ' AND id.interviewer_status = ?';
       params.push(status);
     }
 
-    sql += ' ORDER BY ce.interview_date ASC, ce.created_at DESC ';
-      // sql += `LIMIT 1`
+    sql += ' ORDER BY its.start_time ASC, ce.created_at DESC ';
+
     const evaluations = await query(sql, params);
 
     // Parse JSON fields and convert datetime to UTC
@@ -526,36 +642,47 @@ router.get('/my-assignments', authenticate, authorize('Interviewer'), async (req
 // Get interviewer's assigned candidates (Interviewer only)
 router.get('/my-assignments/decision', authenticate, authorize('Interviewer'), async (req, res) => {
   try {
-    const { status,  decision='pending' , limit=10 , page=1 } = req.query;
-      const params = [req.user.id];
-      const offset = ((parseInt(page) - 1) * parseInt(limit)).toString();
-      let whereSql = `WHERE ce.interviewer_id = ?`;
+    const { status, decision = 'pending', limit = 10, page = 1 } = req.query;
+    const params = [req.user.id];
+    const offset = ((parseInt(page) - 1) * parseInt(limit)).toString();
+    
+    let whereSql = `
+      FROM candidate_evaluations ce
+      INNER JOIN interview_details id ON ce.id = id.candidate_evaluations_id
+      INNER JOIN interviewer_time_slots its ON id.interviewer_time_slots_id = its.id
+      LEFT JOIN resumes r ON ce.resume_id = r.id
+      LEFT JOIN job_descriptions jd ON ce.job_description_id = jd.id
+      WHERE id.interviewer_id COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
+    `;
 
+    if (status) {
+      whereSql += ` AND id.interviewer_status = ?`;
+      params.push(status);
+    }
 
-if (status) {
-  whereSql += ` AND ce.interviewer_status = ?`;
-  params.push(status);
-}
+    if (decision === 'complete') {
+      whereSql += `
+        AND its.start_time <= UTC_TIMESTAMP()
+        AND id.interviewer_feedback IS NOT NULL
+      `;
+    }
 
-if (decision === 'complete') {
-  whereSql += `
-    AND ce.interview_date <= UTC_TIMESTAMP()
-    AND ce.interviewer_feedback IS NOT NULL
-     ORDER BY ce.interview_date DESC 
-  `;
-}
-
-if (decision === 'pending') {
-  whereSql += `
-    AND ce.interview_date <= UTC_TIMESTAMP()
-    AND ce.interviewer_feedback IS NULL
-    ORDER BY ce.interview_date ASC, ce.created_at DESC 
-  `;
-}
+    if (decision === 'pending') {
+      whereSql += `
+        AND its.start_time <= UTC_TIMESTAMP()
+        AND id.interviewer_feedback IS NULL
+      `;
+    }
 
     let sql = `
       SELECT 
         ce.*,
+        id.id as interview_details_id,
+        id.interviewer_status,
+        id.interviewer_feedback,
+        id.interviewer_hold_reason,
+        its.start_time as interview_date,
+        its.end_time as interview_end_time,
         JSON_OBJECT(
           'id', r.id,
           'name', r.name,
@@ -570,33 +697,30 @@ if (decision === 'pending') {
           'title', jd.title,
           'description', jd.description
         ) as job_description
-      FROM candidate_evaluations ce
-      LEFT JOIN resumes r ON ce.resume_id = r.id
-      LEFT JOIN job_descriptions jd ON ce.job_description_id = jd.id
       ${whereSql}
-     
     `;
 
+    // Add ordering based on decision type
+    if (decision === 'complete') {
+      sql += ' ORDER BY its.start_time DESC ';
+    } else if (decision === 'pending') {
+      sql += ' ORDER BY its.start_time ASC, ce.created_at DESC ';
+    }
+
     const countSql = `
-  SELECT COUNT(*) as total
-    FROM candidate_evaluations ce
-      LEFT JOIN resumes r ON ce.resume_id = r.id
-      LEFT JOIN job_descriptions jd ON ce.job_description_id = jd.id
+      SELECT COUNT(*) as total
       ${whereSql}
-`;
+    `;
 
-const [countResult] = await query(countSql, params);
-const totalResult = countResult.total;
-const totalPages = Math.ceil(totalResult / limit);
+    const [countResult] = await query(countSql, params);
+    const totalResult = countResult.total;
+    const totalPages = Math.ceil(totalResult / limit);
 
-    sql += `LIMIT ? OFFSET ?`
+    sql += ` LIMIT ? OFFSET ? `;
+    params.push(limit);
+    params.push(offset);
 
-    params.push(limit)
-      params.push(offset)
     const evaluations = await query(sql, params);
-   
-
-     
 
     // Parse JSON fields and convert datetime to UTC
     const parsedEvaluations = evaluations.map(eval => {
@@ -619,12 +743,12 @@ const totalPages = Math.ceil(totalResult / limit);
       success: true,
       count: parsedEvaluations.length,
       pagination: {
-    page: parseInt(page),
-    limit: parseInt(limit),
-    total : parseInt(totalResult),
-    totalPages : parseInt(totalPages)
-  },
-  data: parsedEvaluations
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: parseInt(totalResult),
+        totalPages: parseInt(totalPages)
+      },
+      data: parsedEvaluations
     });
   } catch (error) {
     console.error('Error fetching interviewer assignments:', error);
@@ -863,7 +987,7 @@ router.delete('/slots/:id', authenticate, authorize('Interviewer'), async (req, 
 
     const result = await query(
       `DELETE FROM interviewer_time_slots 
-       WHERE id = ? AND interviewer_id = ? AND is_booked = 0`,
+       WHERE id = ? AND interviewer_id COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci AND is_booked = 0`,
       [id, req.user.id]
     );
 
@@ -924,7 +1048,7 @@ router.get('/available-slots', authenticate, async (req, res) => {
           'full_name', u.full_name
         ) as interviewer
       FROM interviewer_time_slots s
-      LEFT JOIN users u ON s.interviewer_id = u.id
+      LEFT JOIN users u ON s.interviewer_id COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci
       WHERE s.is_booked = 0
         AND s.start_time > UTC_TIMESTAMP()
         AND u.status = 'active'
@@ -975,40 +1099,278 @@ router.get('/available-slots', authenticate, async (req, res) => {
   }
 });
 
+
+router.post('/available-slots/group', authenticate, async (req, res) => {
+  try {
+    const { job_description_id  } = req.query;
+    const { mappedInterviewers = [] } = req.body
+    // const interviwerId = ['5a082feb-b4ce-4f8b-97b4-97eac46f8b67' , '5c1dc2d2-4b7c-4d93-b542-56510a4cb9d2']
+    if (!job_description_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'job_description_id is required'
+      });
+    }
+
+    const job = await queryOne(
+      'SELECT id, title, interviewers FROM job_descriptions WHERE id = ?',
+      [job_description_id]
+    );
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: 'Job description not found'
+      });
+    }
+
+    // const mappedInterviewers = job.interviewers ? JSON.parse(job.interviewers) : [];
+    // const mappedInterviewers = ['5a082feb-b4ce-4f8b-97b4-97eac46f8b67' , '5c1dc2d2-4b7c-4d93-b542-56510a4cb9d2']
+    const interviewerCount = mappedInterviewers.length;
+    // const placeholders = mappedInterviewers.map(() => '?').join(',');
+    const params = [...mappedInterviewers    ,interviewerCount ];
+   const placeholders = mappedInterviewers.map(() => '?').join(',');
+
+  console.log(placeholders , "placeholders")
+   
+// let sql = `
+//  select * from interviewer_time_slots
+//   where interviewer_id IN (${placeholders})
+//   and  start_time > UTC_TIMESTAMP()
+//   and is_booked = 0
+//   AND start_time IN (
+//     SELECT start_time
+//     FROM interviewer_time_slots
+//     WHERE interviewer_id IN (
+//       ${placeholders}
+//     )
+//     AND start_time > UTC_TIMESTAMP()
+//     AND is_booked = 0
+//     GROUP BY start_time
+//     HAVING COUNT(DISTINCT interviewer_id) = ?
+// )
+// ORDER BY start_time;
+// `;
+   
+let sql = `
+SELECT
+  start_time,
+  end_time,
+
+  -- collect all slot ids
+  JSON_ARRAYAGG(id) AS slot_ids,
+
+  -- collect interviewer ids if needed
+  JSON_ARRAYAGG(interviewer_id) AS interviewer_ids,
+
+  COUNT(*) AS total_slots
+FROM interviewer_time_slots
+WHERE interviewer_id IN (${placeholders})
+AND start_time > UTC_TIMESTAMP()
+AND is_booked = 0
+GROUP BY start_time, end_time
+HAVING COUNT(DISTINCT interviewer_id) = ?
+ORDER BY start_time;
+
+`
+    console.log('Available slots query:', sql);
+    console.log('Available slots params:', params);
+    
+    const rows = await query(sql, params);
+    
+    console.log('Available slots found:', rows.length);
+
+    const slots = rows.map(row => {
+      // Parse JSON arrays from JSON_ARRAYAGG
+      let slotIds = [];
+      let interviewerIds = [];
+      
+      try {
+        slotIds = row.slot_ids ? (typeof row.slot_ids === 'string' ? JSON.parse(row.slot_ids) : row.slot_ids) : [];
+        interviewerIds = row.interviewer_ids ? (typeof row.interviewer_ids === 'string' ? JSON.parse(row.interviewer_ids) : row.interviewer_ids) : [];
+      } catch (e) {
+        console.error('Error parsing slot_ids or interviewer_ids:', e);
+      }
+
+      const slot = {
+        ...row,
+        slot_ids: slotIds,
+        interviewer_ids: interviewerIds
+      };
+      return convertResultToUTC(slot);
+    });
+
+    res.json({
+      success: true,
+      count: slots.length,
+      data: slots
+    });
+  } catch (error) {
+    console.error('Error fetching available slots:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch available slots',
+      message: error.message
+    });
+  }
+});
+
+
+router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) => {
+
+    const { evaluation_id, interviewer_ids, interview_date, slot_ids } = req.body;
+
+    // Validate input
+    if (
+      !evaluation_id ||
+      !Array.isArray(interviewer_ids) ||
+      !Array.isArray(slot_ids) ||
+      interviewer_ids.length === 0 ||
+      interviewer_ids.length !== slot_ids.length ||
+      !interview_date
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid payload: evaluation_id, interviewer_ids array, slot_ids array (same length), and interview_date are required'
+      });
+    }
+
+      
+
+    try {
+
+          // Get evaluation with candidate and job details
+    const evaluation = await queryOne(
+      `SELECT ce.*, 
+        r.name as candidate_name, r.email as candidate_email,
+        jd.title as job_title
+       FROM candidate_evaluations ce
+       LEFT JOIN resumes r ON ce.resume_id = r.id
+       LEFT JOIN job_descriptions jd ON ce.job_description_id = jd.id
+       WHERE ce.id = ?`,
+      [evaluation_id]
+    );
+
+    if (!evaluation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Evaluation not found'
+      });
+    }
+
+    // Step 1: Cancel old assignments - Get all existing interview_details for this evaluation
+    const oldInterviewDetails = await query(
+      `SELECT id, interviewer_time_slots_id 
+       FROM interview_details 
+       WHERE candidate_evaluations_id = ?`,
+      [evaluation_id]
+    );
+
+    // Step 2: Free old slots (set is_booked = 0, evaluation_id = NULL)
+    if (oldInterviewDetails.length > 0) {
+      const oldSlotIds = oldInterviewDetails.map(detail => detail.interviewer_time_slots_id).filter(Boolean);
+      if (oldSlotIds.length > 0) {
+        await query(
+          `UPDATE interviewer_time_slots 
+           SET is_booked = 0, evaluation_id = NULL 
+           WHERE id IN (${oldSlotIds.map(() => '?').join(',')})`,
+          oldSlotIds
+        );
+      }
+    }
+
+    // Step 3: Delete all existing interview_details for this evaluation
+    await query(
+      `DELETE FROM interview_details 
+       WHERE candidate_evaluations_id = ?`,
+      [evaluation_id]
+    );
+
+    // Convert interview date to UTC
+    const interviewDateUTC = toUTCString(interview_date);
+
+    // Generate interview link
+    const interviewLink = await generateInterViewLink({
+      topic: "INTERVIEW",
+      start_time: interviewDateUTC,
+      duration: process.env.INTERVIEW_TIME_SLOT,
+    });
+
+    // Update candidate_evaluations with interview links
+    await query(
+      `UPDATE candidate_evaluations 
+       SET interview_start_url = ?, interview_join_url = ?
+       WHERE id = ?`,
+      [interviewLink.start_url, interviewLink.join_url, evaluation_id]
+    );
+
+    // Create assignment records and interview details
+    const assignmentNote = oldInterviewDetails.length > 0 ? 'Bulk reassignment' : 'Bulk assignment';
+    for (let i = 0; i < interviewer_ids.length; i++) {
+      // Create interview_assignments record
+      await query(
+        `INSERT INTO interview_assignments (evaluation_id, interviewer_id, interview_date, assigned_by, notes)
+         VALUES (?, ?, ?, ?, ?)`,
+        [evaluation_id, interviewer_ids[i], interviewDateUTC, req.user.id, assignmentNote]
+      );
+  
+      // Create interview_details record
+      await query(
+        `INSERT INTO interview_details (candidate_evaluations_id, interviewer_time_slots_id, interviewer_id, interviewer_status)
+         VALUES (?, ?, ?, 'pending')`,
+        [evaluation_id, slot_ids[i], interviewer_ids[i]]
+      );
+
+      // Mark slot as booked
+      await query(
+        `UPDATE interviewer_time_slots 
+         SET is_booked = 1, evaluation_id = ?, job_description_id = ?
+         WHERE id = ? AND is_booked = 0`,
+        [evaluation_id, evaluation.job_description_id, slot_ids[i]]
+      );
+    }
+
+
+
+    res.json({
+      success: true,
+      message: `Successfully assigned ${interviewer_ids.length} interviewer(s)`,
+      interview_link: interviewLink
+    });
+  } catch (error) {
+    console.error('Error in bulk assignment:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to assign interviewers',
+      message: error.message
+    });
+  }
+});
+
 // get today'is interviews list for admin and hr 
 
 router.get('/today-avaiable-interviews', authenticate, requireWriteAccess, async (req, res) => {
    
 
     try {
-        const sql = ` WITH ranked_slots AS (
+        const sql = `
   SELECT
-    its.start_time,
-    its.end_time,
-    users.full_name AS interviewer_name,
-    jd.title,
+    ev.id AS evaluation_id,
     ev.candidate_name,
     ev.interview_start_url,
-    ROW_NUMBER() OVER (
-      PARTITION BY ev.candidate_name
-      ORDER BY its.start_time DESC
-    ) AS rn
-  FROM interviewer_time_slots its
-  INNER JOIN users
-    ON its.interviewer_id = users.id
-  INNER JOIN candidate_evaluations ev
-    ON its.evaluation_id = ev.id
-  INNER JOIN job_descriptions jd
-    ON ev.job_description_id = jd.id
+    jd.title,
+    MIN(its.start_time) AS start_time,
+    MIN(its.end_time) AS end_time,
+    GROUP_CONCAT(DISTINCT users.full_name ORDER BY users.full_name SEPARATOR ', ') AS interviewer_name
+  FROM interview_details id
+  INNER JOIN interviewer_time_slots its ON id.interviewer_time_slots_id = its.id
+  INNER JOIN candidate_evaluations ev ON id.candidate_evaluations_id = ev.id
+  INNER JOIN users ON id.interviewer_id COLLATE utf8mb4_unicode_ci = users.id COLLATE utf8mb4_unicode_ci
+  INNER JOIN job_descriptions jd ON ev.job_description_id = jd.id
   WHERE DATE(its.start_time) = UTC_DATE()
     AND its.is_booked = 1
-)
-
-SELECT *
-FROM ranked_slots
-WHERE rn = 1
-ORDER BY start_time;
-
+  GROUP BY ev.id, ev.candidate_name, ev.interview_start_url, jd.title
+  ORDER BY start_time ASC;
 `
 
 
