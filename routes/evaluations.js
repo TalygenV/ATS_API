@@ -804,25 +804,20 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
   let sql = `
   SELECT 
     ce.*,
-
   (
   SELECT COUNT(*)
   FROM resumes r3
   WHERE
     (
-      -- CASE 1: current resume is ROOT (version 1)
       r.parent_id IS NULL
       AND (r3.id = r.id OR r3.parent_id = r.id)
     )
     OR
     (
-      -- CASE 2: current resume is CHILD (version 2+)
       r.parent_id IS NOT NULL
       AND (r3.id = r.parent_id OR r3.parent_id = r.parent_id)
     )
 ) AS total_versions,
-
-
     JSON_OBJECT(
       'id', r.id,
       'name', r.name,
@@ -835,7 +830,6 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
       'version_number', r.version_number,
       'created_at', r.created_at
     ) AS resume,
-
     JSON_OBJECT(
       'id', u.id,
       'email', u.email,
@@ -843,8 +837,11 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
     ) AS interviewer
 
   FROM candidate_evaluations ce
-  LEFT JOIN resumes r ON ce.resume_id = r.id
-  LEFT JOIN users u ON ce.interviewer_id = u.id
+Left JOIN resumes r ON ce.resume_id = r.id
+left JOIN interview_details id on ce.id = id.candidate_evaluations_id
+left  JOIN users u 
+  ON id.interviewer_id COLLATE utf8mb4_unicode_ci 
+   = u.id COLLATE utf8mb4_unicode_ci
   WHERE ce.job_description_id = ?
 `;
 
@@ -854,12 +851,13 @@ const params = [job_description_id];
 if (req.user.role === 'Interviewer') {
   sql += `
     AND (
-      ce.interviewer_id = ?
+     id.interviewer_id = ?
       OR EXISTS (
         SELECT 1
         FROM candidate_evaluations ce2
         JOIN resumes r2 ON ce2.resume_id = r2.id
-        WHERE ce2.interviewer_id = ?
+        left JOIN interview_details id on ce2.id = id.candidate_evaluations_id
+        WHERE id.interviewer_id = ?
           AND ce2.job_description_id = ce.job_description_id
           AND (
             r2.id = r.parent_id

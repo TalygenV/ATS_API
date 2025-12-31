@@ -975,6 +975,199 @@ router.get('/available-slots', authenticate, async (req, res) => {
   }
 });
 
+
+router.post('/available-slots/group', authenticate, async (req, res) => {
+  try {
+    const { job_description_id  } = req.query;
+    const { mappedInterviewers = [] } = req.body
+    // const interviwerId = ['5a082feb-b4ce-4f8b-97b4-97eac46f8b67' , '5c1dc2d2-4b7c-4d93-b542-56510a4cb9d2']
+    if (!job_description_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'job_description_id is required'
+      });
+    }
+
+    const job = await queryOne(
+      'SELECT id, title, interviewers FROM job_descriptions WHERE id = ?',
+      [job_description_id]
+    );
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: 'Job description not found'
+      });
+    }
+
+    // const mappedInterviewers = job.interviewers ? JSON.parse(job.interviewers) : [];
+    // const mappedInterviewers = ['5a082feb-b4ce-4f8b-97b4-97eac46f8b67' , '5c1dc2d2-4b7c-4d93-b542-56510a4cb9d2']
+    const interviewerCount = mappedInterviewers.length;
+    // const placeholders = mappedInterviewers.map(() => '?').join(',');
+    const params = [...mappedInterviewers    ,interviewerCount ];
+   const placeholders = mappedInterviewers.map(() => '?').join(',');
+
+  console.log(placeholders , "placeholders")
+   
+// let sql = `
+//  select * from interviewer_time_slots
+//   where interviewer_id IN (${placeholders})
+//   and  start_time > UTC_TIMESTAMP()
+//   and is_booked = 0
+//   AND start_time IN (
+//     SELECT start_time
+//     FROM interviewer_time_slots
+//     WHERE interviewer_id IN (
+//       ${placeholders}
+//     )
+//     AND start_time > UTC_TIMESTAMP()
+//     AND is_booked = 0
+//     GROUP BY start_time
+//     HAVING COUNT(DISTINCT interviewer_id) = ?
+// )
+// ORDER BY start_time;
+// `;
+   
+let sql = `
+SELECT
+  start_time,
+  end_time,
+
+  -- collect all slot ids
+  JSON_ARRAYAGG(id) AS slot_ids,
+
+  -- collect interviewer ids if needed
+  JSON_ARRAYAGG(interviewer_id) AS interviewer_ids,
+
+  COUNT(*) AS total_slots
+FROM interviewer_time_slots
+WHERE interviewer_id IN (${placeholders})
+AND start_time > UTC_TIMESTAMP()
+AND is_booked = 0
+GROUP BY start_time, end_time
+HAVING COUNT(DISTINCT interviewer_id) = ?
+ORDER BY start_time;
+
+`
+    console.log('Available slots query:', sql);
+    console.log('Available slots params:', params);
+    
+    const rows = await query(sql, params);
+    
+    console.log('Available slots found:', rows.length);
+
+    const slots = rows.map(row => {
+      const slot = {
+        ...row,
+        interviewer: row.interviewer ? JSON.parse(row.interviewer) : null
+      };
+      return convertResultToUTC(slot);
+    });
+
+    res.json({
+      success: true,
+      count: slots.length,
+      data: slots
+    });
+  } catch (error) {
+    console.error('Error fetching available slots:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch available slots',
+      message: error.message
+    });
+  }
+});
+
+
+router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) => {
+
+    const { evaluation_id, interviewer_ids , interview_date, slot_ids} = req.body;
+
+        if (
+    !evaluation_id ||
+    !Array.isArray(interviewer_ids) ||
+    !Array.isArray(slot_ids) ||
+    interviewer_ids.length !== slot_ids.length
+  ) {
+    return res.status(400).json({ success: false, message: 'Invalid payload' });
+  }
+            // Update evaluation with interviewer assignment (convert to UTC)
+    const interviewDateUTC = toUTCString(interview_date);
+
+      
+
+    try {
+
+          // Get evaluation with candidate and job details
+    const evaluation = await queryOne(
+      `SELECT ce.*, 
+        r.name as candidate_name, r.email as candidate_email,
+        jd.title as job_title
+       FROM candidate_evaluations ce
+       LEFT JOIN resumes r ON ce.resume_id = r.id
+       LEFT JOIN job_descriptions jd ON ce.job_description_id = jd.id
+       WHERE ce.id = ?`,
+      [evaluation_id]
+    );
+
+    if (!evaluation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Evaluation not found'
+      });
+    }
+           // Create assignment record (convert to UTC)
+      for(let i =0 ; i < interviewer_ids.length ; i++ )
+      {
+         await query(
+      `INSERT INTO interview_assignments (evaluation_id, interviewer_id, interview_date, assigned_by, notes)
+       VALUES (?, ?, ?, ?, ?)`,
+      [evaluation_id, interviewer_ids[i], interviewDateUTC, req.user.id, null]
+    );
+      }
+  
+      // create a interview_details record 
+       for(let i =0 ; i < interviewer_ids.length ; i++ )
+       {
+         await query(
+      `INSERT INTO interview_details (candidate_evaluations_id, interviewer_time_slots_id, interviewer_id, interviewer_status)
+       VALUES (?, ?, ? , 'pending')`,
+      [evaluation_id, slot_ids[i], interviewer_ids[i] ]
+    );
+  }
+    
+
+
+    let interviewLink  = await generateInterViewLink({
+    topic: "INTERVIEW",
+    start_time: interview_date,
+    duration: process.env.INTERVIEW_TIME_SLOT,
+});
+  // mark all slots to book for all interviwer
+   for(let i =0 ; i < interviewer_ids.length ; i++ )
+   {
+     await query(
+        `UPDATE interviewer_time_slots 
+         SET is_booked = 1, evaluation_id = ?, job_description_id = ?
+         WHERE id = ? AND is_booked = 0`,
+        [evaluation_id, evaluation.job_description_id, slot_ids[i]]
+      );
+    }
+ res.json({
+      success: true,
+      interview_link: interviewLink,
+    });
+    } catch (error) {
+        console.error(error);
+    res.status(500).json({ success: false, message: 'Assignment failed' });
+    }
+ 
+  
+
+
+    })
+
 // get today'is interviews list for admin and hr 
 
 router.get('/today-avaiable-interviews', authenticate, requireWriteAccess, async (req, res) => {
