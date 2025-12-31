@@ -383,19 +383,56 @@ router.get('/:id', authenticate, async (req, res) => {
     }
 
     // Visibility check: Interviewers can only see their assigned candidates
-    if (req.user.role === 'Interviewer' && evaluation.interviewer_id !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied. This candidate is not assigned to you.'
-      });
+    if (req.user.role === 'Interviewer') {
+      const hasAccess = await queryOne(
+        'SELECT 1 FROM interview_details WHERE candidate_evaluations_id = ? AND interviewer_id COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci',
+        [evaluation.id, req.user.id]
+      );
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied. This candidate is not assigned to you.'
+        });
+      }
     }
+
+    // Get interview details for this evaluation
+    const interviewDetails = await query(
+      `SELECT 
+        id.id,
+        id.interviewer_id,
+        id.interviewer_time_slots_id,
+        id.interviewer_status,
+        id.interviewer_feedback,
+        id.interviewer_hold_reason,
+        its.start_time as interview_date,
+        its.end_time as interview_end_time,
+        JSON_OBJECT(
+          'id', u.id,
+          'email', u.email,
+          'full_name', u.full_name
+        ) as interviewer
+      FROM interview_details id
+      INNER JOIN interviewer_time_slots its ON id.interviewer_time_slots_id = its.id
+      LEFT JOIN users u ON id.interviewer_id COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci
+      WHERE id.candidate_evaluations_id = ?
+      ORDER BY its.start_time ASC`,
+      [evaluation.id]
+    );
+
+    // Parse interview details
+    const parsedInterviewDetails = interviewDetails.map(detail => ({
+      ...detail,
+      interviewer: detail.interviewer ? JSON.parse(detail.interviewer) : null,
+      interviewer_feedback: detail.interviewer_feedback ? JSON.parse(detail.interviewer_feedback) : null
+    }));
 
     // Parse JSON fields
     const parsedEvaluation = {
       ...evaluation,
       resume: safeParseJSON(evaluation.resume, null),
       job_description: safeParseJSON(evaluation.job_description, null),
-      interviewer_feedback: safeParseJSON(evaluation.interviewer_feedback, null)
+      interview_details: convertResultToUTC(parsedInterviewDetails)
     };
 
     // Parse nested JSON in resume
@@ -487,14 +524,27 @@ router.post('/:id/interviewer-feedback', authenticate, authorize('Interviewer'),
 
     // Validate that this evaluation is assigned to the current interviewer
     const evaluation = await queryOne(
-      'SELECT * FROM candidate_evaluations WHERE id = ? AND interviewer_id = ?',
-      [id, req.user.id]
+      'SELECT * FROM candidate_evaluations WHERE id = ?',
+      [id]
     );
 
     if (!evaluation) {
       return res.status(404).json({
         success: false,
-        error: 'Evaluation not found or not assigned to you'
+        error: 'Evaluation not found'
+      });
+    }
+
+    // Check if interviewer is assigned via interview_details
+    const interviewDetail = await queryOne(
+      'SELECT * FROM interview_details WHERE candidate_evaluations_id = ? AND interviewer_id COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci',
+      [id, req.user.id]
+    );
+
+    if (!interviewDetail) {
+      return res.status(403).json({
+        success: false,
+        error: 'This candidate is not assigned to you'
       });
     }
 
@@ -537,8 +587,8 @@ router.post('/:id/interviewer-feedback', authenticate, authorize('Interviewer'),
       feedbackJson = JSON.stringify(ratings);
     }
 
-    // Update evaluation with feedback
-    let sql = `UPDATE candidate_evaluations 
+    // Update interview_details with feedback
+    let sql = `UPDATE interview_details 
                SET interviewer_feedback = ?, interviewer_status = ?`;
     const params = [feedbackJson, status];
 
@@ -550,7 +600,7 @@ router.post('/:id/interviewer-feedback', authenticate, authorize('Interviewer'),
     }
 
     sql += ' WHERE id = ?';
-    params.push(id);
+    params.push(interviewDetail.id);
 
     await query(sql, params);
 
@@ -568,8 +618,8 @@ router.post('/:id/interviewer-feedback', authenticate, authorize('Interviewer'),
       sqlForHistory += ', interviewer_hold_reason = NULL';
     }
 
-    sqlForHistory += ' WHERE evaluation_id = ? order by created_at desc limit 1';
-    paramsForHistory.push(id);
+    sqlForHistory += ' WHERE evaluation_id = ? AND interviewer_id COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci ORDER BY created_at DESC LIMIT 1';
+    paramsForHistory.push(id, req.user.id);
 
     await query(sqlForHistory, paramsForHistory);
 
@@ -656,16 +706,20 @@ router.post('/:id/hr-decision', authenticate, requireWriteAccess, async (req, re
       });
     }
 
-    // Get interviewer status to check if override is happening
-    const interviewerStatus = evaluation.interviewer_status;
+    // Check if any interviewer selected the candidate (for override validation)
+    const interviewDetails = await query(
+      'SELECT interviewer_status FROM interview_details WHERE candidate_evaluations_id = ?',
+      [id]
+    );
+    const hasAnyInterviewerSelected = interviewDetails.some(id => id.interviewer_status === 'selected');
 
     // Validate reason:
     // 1. Required for rejected or on_hold
-    // 2. Required for selected if interviewer didn't select (override case)
+    // 2. Required for selected if no interviewer selected (override case)
     const requiresReason = 
       status === 'rejected' || 
       status === 'on_hold' ||
-      (status === 'selected' && interviewerStatus && interviewerStatus !== 'selected');
+      (status === 'selected' && !hasAnyInterviewerSelected);
 
     if (requiresReason && (!reason || !reason.trim())) {
       if (status === 'selected') {
@@ -829,19 +883,10 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
       'parent_id', r.parent_id,
       'version_number', r.version_number,
       'created_at', r.created_at
-    ) AS resume,
-    JSON_OBJECT(
-      'id', u.id,
-      'email', u.email,
-      'full_name', u.full_name
-    ) AS interviewer
+    ) AS resume
 
   FROM candidate_evaluations ce
 Left JOIN resumes r ON ce.resume_id = r.id
-left JOIN interview_details id on ce.id = id.candidate_evaluations_id
-left  JOIN users u 
-  ON id.interviewer_id COLLATE utf8mb4_unicode_ci 
-   = u.id COLLATE utf8mb4_unicode_ci
   WHERE ce.job_description_id = ?
 `;
 
@@ -850,24 +895,14 @@ const params = [job_description_id];
     // Visibility rules: Interviewers can only see their assigned candidates
 if (req.user.role === 'Interviewer') {
   sql += `
-    AND (
-     id.interviewer_id = ?
-      OR EXISTS (
-        SELECT 1
-        FROM candidate_evaluations ce2
-        JOIN resumes r2 ON ce2.resume_id = r2.id
-        left JOIN interview_details id on ce2.id = id.candidate_evaluations_id
-        WHERE id.interviewer_id = ?
-          AND ce2.job_description_id = ce.job_description_id
-          AND (
-            r2.id = r.parent_id
-            OR r2.parent_id = r.id
-            OR r2.id = r.id
-          )
-      )
+    AND EXISTS (
+      SELECT 1
+      FROM interview_details id
+      WHERE id.candidate_evaluations_id = ce.id
+        AND id.interviewer_id COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
     )
   `;
-  params.push(req.user.id, req.user.id);
+  params.push(req.user.id);
 }
 
 
@@ -1083,10 +1118,74 @@ const interviewerId = req.user.id;
       }
     }
 
+    // Fetch interview_details for all evaluations
+    const evaluationIds = processedEvaluations.map(e => e.id);
+    let interviewDetailsMap = new Map();
+    
+    if (evaluationIds.length > 0) {
+      const placeholders = evaluationIds.map(() => '?').join(',');
+      const interviewDetails = await query(
+        `SELECT 
+          id.id,
+          id.candidate_evaluations_id,
+          id.interviewer_id,
+          id.interviewer_time_slots_id,
+          id.interviewer_status,
+          id.interviewer_feedback,
+          id.interviewer_hold_reason,
+          its.start_time as interview_date,
+          its.end_time as interview_end_time,
+          JSON_OBJECT(
+            'id', u.id,
+            'email', u.email,
+            'full_name', u.full_name
+          ) as interviewer
+        FROM interview_details id
+        INNER JOIN interviewer_time_slots its ON id.interviewer_time_slots_id = its.id
+        LEFT JOIN users u ON id.interviewer_id COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci
+        WHERE id.candidate_evaluations_id IN (${placeholders})
+        ORDER BY its.start_time ASC`,
+        evaluationIds
+      );
+
+      // Group interview details by evaluation_id
+      interviewDetails.forEach(detail => {
+        const evalId = detail.candidate_evaluations_id;
+        if (!interviewDetailsMap.has(evalId)) {
+          interviewDetailsMap.set(evalId, []);
+        }
+        const parsed = {
+          id: detail.id,
+          interviewer_id: detail.interviewer_id,
+          interviewer_time_slots_id: detail.interviewer_time_slots_id,
+          interviewer_status: detail.interviewer_status,
+          interviewer_feedback: detail.interviewer_feedback ? JSON.parse(detail.interviewer_feedback) : null,
+          interviewer_hold_reason: detail.interviewer_hold_reason,
+          interview_date: detail.interview_date,
+          interview_end_time: detail.interview_end_time,
+          interviewer: detail.interviewer ? JSON.parse(detail.interviewer) : null
+        };
+        interviewDetailsMap.get(evalId).push(convertResultToUTC(parsed));
+      });
+    }
+
+    // Attach interview_details to each evaluation
+    const finalEvaluations = processedEvaluations.map(eval => ({
+      ...eval,
+      interview_details: interviewDetailsMap.get(eval.id) || [],
+      // Keep backward compatibility: set interviewer and interview_date from first interview_detail if exists
+      interviewer: interviewDetailsMap.get(eval.id)?.[0]?.interviewer || null,
+      interview_date: interviewDetailsMap.get(eval.id)?.[0]?.interview_date || null,
+      interviewer_id: interviewDetailsMap.get(eval.id)?.[0]?.interviewer_id || null,
+      interviewer_status: interviewDetailsMap.get(eval.id)?.[0]?.interviewer_status || null,
+      interviewer_feedback: interviewDetailsMap.get(eval.id)?.[0]?.interviewer_feedback || null,
+      interviewer_hold_reason: interviewDetailsMap.get(eval.id)?.[0]?.interviewer_hold_reason || null
+    }));
+
     res.json({
       success: true,
-      count: processedEvaluations.length,
-      data: processedEvaluations
+      count: finalEvaluations.length,
+      data: finalEvaluations
     });
   } catch (error) {
     console.error('Error fetching evaluations by job description:', error);
@@ -1290,11 +1389,17 @@ router.get('/:id/timeline', authenticate, async (req, res) => {
     }
 
     // Visibility check: Interviewers can only see their assigned candidates
-    if (req.user.role === 'Interviewer' && evaluation.interviewer_id !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied. This candidate is not assigned to you.'
-      });
+    if (req.user.role === 'Interviewer') {
+      const hasAccess = await queryOne(
+        'SELECT 1 FROM interview_details WHERE candidate_evaluations_id = ? AND interviewer_id COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci',
+        [evaluation.id, req.user.id]
+      );
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied. This candidate is not assigned to you.'
+        });
+      }
     }
 
     const timeline = [];
@@ -1329,8 +1434,8 @@ router.get('/:id/timeline', authenticate, async (req, res) => {
         ) as assigned_by_user
 from candidate_evaluations ce
  inner join interview_assignments ia
-   LEFT JOIN users u1 ON ia.interviewer_id = u1.id
-       LEFT JOIN users u2 ON ia.assigned_by = u2.id
+   LEFT JOIN users u1 ON ia.interviewer_id COLLATE utf8mb4_unicode_ci = u1.id COLLATE utf8mb4_unicode_ci
+       LEFT JOIN users u2 ON ia.assigned_by COLLATE utf8mb4_unicode_ci = u2.id COLLATE utf8mb4_unicode_ci
  on ce.id = ia.evaluation_id
  where ce.resume_id = ?`,
  [id]
@@ -1355,41 +1460,11 @@ from candidate_evaluations ce
         }
       });
 
-      // Interview scheduled event
-      timeline.push({
-        type: 'interview_scheduled',
-        title: 'Interview Scheduled',
-        description: `Interview scheduled for ${fromUTCString(assignment.interview_date) ? fromUTCString(assignment.interview_date).toLocaleString('en-US', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        }) : 'N/A'}`,
-        timestamp: assignment.interview_date,
-        user: null,
-        details: {
-          interviewer: interviewer,
-          interview_date: assignment.interview_date
-        }
-      });
+      // Note: Interview scheduled events are now handled by interview_details section below
+      // to avoid duplicates and use the current source of truth
 
-       // 3. Interviewer feedback submitted
-       if (assignment.interviewer_status && assignment.interviewer_status !== 'pending') {
-            const feedback = assignment.interviewer_feedback ? JSON.parse(assignment.interviewer_feedback) : null;
-                  timeline.push({
-        type: 'feedback_submitted',
-        title: 'Interview Feedback Submitted',
-        description: `Interviewer decision: ${assignment.interviewer_status}`,
-        timestamp: assignment.updated_at,
-        user: assignedBy,
-        details: {
-          status: assignment.interviewer_status,
-          ratings: feedback,
-          hold_reason: assignment.interviewer_hold_reason
-        }
-      });
-       }
+      // Note: Interviewer feedback events are now handled by interview_details section below
+      // to avoid duplicates and use the current source of truth (interview_details has the actual interviewer, not the assigner)
 
         if (assignment.hr_final_status && assignment.hr_final_status !== 'pending') {
               timeline.push({
@@ -1405,6 +1480,92 @@ from candidate_evaluations ce
         }
       });
         }
+    });
+
+    // 3. Get current interview details (multiple interviewers support)
+    const interviewDetails = await query(
+      `SELECT 
+        id.id,
+        id.interviewer_status,
+        id.interviewer_feedback,
+        id.interviewer_hold_reason,
+        its.start_time as interview_date,
+        its.end_time as interview_end_time,
+        COALESCE(
+          (SELECT MAX(ia.updated_at) 
+           FROM interview_assignments ia 
+           WHERE ia.evaluation_id = id.candidate_evaluations_id 
+             AND ia.interviewer_id COLLATE utf8mb4_unicode_ci = id.interviewer_id COLLATE utf8mb4_unicode_ci
+             AND ia.interviewer_status IS NOT NULL
+           LIMIT 1),
+          its.start_time
+        ) as feedback_timestamp,
+        JSON_OBJECT(
+          'id', u.id,
+          'email', u.email,
+          'full_name', u.full_name
+        ) as interviewer
+      FROM interview_details id
+      INNER JOIN interviewer_time_slots its ON id.interviewer_time_slots_id = its.id
+      LEFT JOIN users u ON id.interviewer_id COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci
+      WHERE id.candidate_evaluations_id = ?
+      ORDER BY its.start_time ASC`,
+      [evaluation.id]
+    );
+
+    interviewDetails.forEach(detail => {
+      const interviewer = detail.interviewer ? JSON.parse(detail.interviewer) : null;
+      const interviewDate = detail.interview_date;
+
+      // Add interview scheduled event if not already in timeline
+      const alreadyScheduled = timeline.some(item => 
+        item.type === 'interview_scheduled' && 
+        item.details?.interviewer?.id === interviewer?.id &&
+        item.timestamp === interviewDate
+      );
+
+      if (!alreadyScheduled && interviewDate) {
+        timeline.push({
+          type: 'interview_scheduled',
+          title: 'Interview Scheduled',
+          description: `Interview scheduled with ${interviewer?.full_name || interviewer?.email || 'Interviewer'} for ${fromUTCString(interviewDate) ? fromUTCString(interviewDate).toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          }) : 'N/A'}`,
+          timestamp: interviewDate,
+          user: null,
+          details: {
+            interviewer: interviewer,
+            interview_date: interviewDate,
+            interview_details_id: detail.id
+          }
+        });
+      }
+
+      // Add feedback if submitted
+      if (detail.interviewer_status && detail.interviewer_status !== 'pending') {
+        const feedback = detail.interviewer_feedback ? JSON.parse(detail.interviewer_feedback) : null;
+        // Use feedback_timestamp (from interview_assignments.updated_at) if available, otherwise use interview_date
+        const feedbackTimestamp = detail.feedback_timestamp || detail.interview_date;
+        
+        timeline.push({
+          type: 'feedback_submitted',
+          title: 'Interview Feedback Submitted',
+          description: `Feedback from ${interviewer?.full_name || interviewer?.email || 'Interviewer'}: ${detail.interviewer_status}`,
+          timestamp: feedbackTimestamp,
+          user: interviewer,
+          details: {
+            interviewer: interviewer,
+            status: detail.interviewer_status,
+            ratings: feedback,
+            hold_reason: detail.interviewer_hold_reason,
+            interview_details_id: detail.id
+          }
+        });
+      }
     });
 
    
