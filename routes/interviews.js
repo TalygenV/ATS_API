@@ -1330,7 +1330,115 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
       );
     }
 
+    // Send email notifications
+    const candidateName = evaluation.candidate_name || evaluation.name || 'Candidate';
+    const candidateEmail = evaluation.candidate_email || evaluation.email;
+    const jobTitle = evaluation.job_title || 'Position';
 
+    // Fetch all interviewer details
+    const placeholders = interviewer_ids.map(() => '?').join(',');
+    const interviewers = await query(
+      `SELECT id, email, full_name FROM users WHERE id IN (${placeholders}) AND role = 'Interviewer'`,
+      interviewer_ids
+    );
+
+    // Fetch slot details to get interview dates
+    const slotPlaceholders = slot_ids.map(() => '?').join(',');
+    const slots = await query(
+      `SELECT id, start_time, interviewer_id FROM interviewer_time_slots WHERE id IN (${slotPlaceholders})`,
+      slot_ids
+    );
+
+    // Create a map of slot_id to slot for easy lookup
+    const slotMap = new Map();
+    slots.forEach(slot => {
+      slotMap.set(slot.id, slot);
+    });
+
+    // Send email to each interviewer (using their corresponding slot)
+    for (let i = 0; i < interviewer_ids.length; i++) {
+      const interviewerId = interviewer_ids[i];
+      const slotId = slot_ids[i];
+      const interviewer = interviewers.find(inv => inv.id === interviewerId);
+      
+      if (interviewer && interviewer.email) {
+        const slot = slotMap.get(slotId);
+        const slotDate = slot ? fromUTCString(slot.start_time) : fromUTCString(interviewDateUTC);
+        
+        await sendInterviewAssignmentToInterviewer({
+          // interviewerEmail: interviewer.email,
+          interviewerEmail: 'ssrivastav@zorbis.com',
+          interviewerName: interviewer.full_name || interviewer.email,
+          candidateName,
+          candidateEmail,
+          jobTitle,
+          interviewDate: slotDate,
+          interViewLink: interviewLink.start_url
+        });
+      }
+    }
+
+    // Send email to candidate (mentioning all interviewers)
+    if (candidateEmail) {
+      const interviewerNames = interviewers.map(i => i.full_name || i.email).join(', ');
+      await sendInterviewAssignmentToCandidate({
+        candidateEmail: 'ssrivastav@cogniter.com',
+        candidateName,
+        jobTitle,
+        interviewDate: fromUTCString(interviewDateUTC),
+        interviewerName: interviewerNames,
+        interviewLink: interviewLink.join_url
+      });
+    }
+
+    // Notify HR/Admin about bulk scheduled interview
+    try {
+      const hrAdminUsers = await query(
+        "SELECT email, role FROM users WHERE role IN ('HR', 'Admin')"
+      );
+
+      const hrAdminEmails = hrAdminUsers.map(u => u.email).filter(Boolean);
+      if (hrAdminEmails.length > 0) {
+        const interviewerList = interviewers.map(i => i.full_name || i.email).join(', ');
+        const subject = `Bulk Interview Scheduled: ${candidateName} - ${jobTitle}`;
+        const html = `
+          <!DOCTYPE html>
+          <html>
+          <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <h2>Bulk Interview Scheduled</h2>
+            <p>Multiple interviewers have been assigned with the following details:</p>
+            <ul>
+              <li><strong>Candidate:</strong> ${candidateName}</li>
+              <li><strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}</li>
+              <li><strong>Job Position:</strong> ${jobTitle}</li>
+              <li><strong>Interviewers (${interviewer_ids.length}):</strong> ${interviewerList}</li>
+              <li><strong>Interviewer Link:</strong> ${interviewLink.start_url}</li>
+              <li><strong>User Link:</strong> ${interviewLink.join_url}</li>
+              <li><strong>Date & Time:</strong> ${fromUTCString(interviewDateUTC) ? fromUTCString(interviewDateUTC).toLocaleString('en-US') : 'N/A'}</li>
+            </ul>
+          </body>
+          </html>
+        `;
+
+        sendEmail({
+          to: 'schamoli@cogniter.com',
+          subject,
+          html
+        })
+        // uncomment to send email to all hr and admin
+        // await Promise.all(
+        //   hrAdminEmails.map(email =>
+        //     sendEmail({
+        //       to: email,
+        //       subject,
+        //       html
+        //     })
+        //   )
+        // );
+      }
+    } catch (notifyError) {
+      console.error('Error sending HR/Admin bulk schedule emails:', notifyError);
+    }
 
     res.json({
       success: true,
