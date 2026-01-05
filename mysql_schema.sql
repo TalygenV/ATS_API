@@ -270,4 +270,19 @@ COLLATE=utf8mb4_unicode_ci;
 
 ------------------------------------------------------------------------------------
 
-
+CREATE TABLE Meeting_Settings (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    Type VARCHAR(255) NOT NULL,
+    ZOOM_ACCOUNT_ID VARCHAR(255) NULL,
+    ZOOM_CLIENT_ID VARCHAR(255)  NULL,
+    ZOOM_CLIENT_SECRET VARCHAR(255)  NULL,
+    Zoom_join_before_host TINYINT(1)  NULL,
+    Zoom_waiting_room TINYINT(1)  NULL,
+    Zoom_Email VARCHAR(255)  NULL,
+    Modified_by VARCHAR(255) NOT NULL,
+    Modified_at DATETIME NOT NULL,
+    status VARCHAR(10) NOT NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
+COLLATE=utf8mb4_unicode_ci;
