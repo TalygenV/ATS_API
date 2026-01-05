@@ -248,3 +248,26 @@ CHANGE COLUMN `interviewer_id` `interviewer_id` VARCHAR(36) NULL DEFAULT NULL ;
 
 ALTER TABLE `ats_system_local`.`interview_details` 
 CHANGE COLUMN `id` `id` BIGINT NOT NULL AUTO_INCREMENT ;
+
+
+-- SMTP Setting Table ---------05/01/2026--------------------Samson-------------
+CREATE TABLE SMTPSetting (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    smtp_server VARCHAR(255) NOT NULL,
+    smtp_user_name VARCHAR(255) NOT NULL,
+    smtp_password VARCHAR(255) NOT NULL,
+    from_email VARCHAR(255) NOT NULL,
+    smtp_port VARCHAR(255) NOT NULL,
+    is_secure_smtp TINYINT(1) NOT NULL,
+    smtp_type VARCHAR(255) NOT NULL,
+    created_by BIGINT NOT NULL,
+    created_at DATETIME NOT NULL,
+    status VARCHAR(10) NOT NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
+COLLATE=utf8mb4_unicode_ci;
+
+------------------------------------------------------------------------------------
+
+
