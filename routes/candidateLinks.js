@@ -13,6 +13,7 @@ const { findOriginalResume, getNextVersionNumber } = require('../utils/duplicate
 const { sendEmail, sendInterviewAssignmentToInterviewer, sendInterviewAssignmentToCandidate } = require('../utils/emailService');
 const { toUTCString, fromUTCString, getCurrentUTCString, convertResultToUTC } = require('../utils/datetimeUtils');
 const { generateInterViewLink } = require('../utils/zoomLinkGenerate');
+const uploadRouter = require('./upload');
 
 const router = express.Router();
 
@@ -589,6 +590,14 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
     );
 
     const resumeId = resumeResult.insertId;
+
+      // Upload to Talygen API and store response (now with resume_id)
+  let talygenUpload = null;
+  try {
+    talygenUpload = await uploadRouter.uploadToTalygen(filePath, fileName, mimetype, resumeId);
+  } catch (talygenError) {
+    console.error(`⚠️  Talygen upload failed, continuing with resume processing:`, talygenError.message);
+  }
 
     // Evaluate with resume + JD + Q&A
     const matchResults = await matchResumeWithJobDescriptionAndQA(

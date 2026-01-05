@@ -899,4 +899,6 @@ router.get('/talygen', authenticate, async (req, res) => {
   }
 });
 
+router.uploadToTalygen = uploadToTalygen;
+
 module.exports = router;

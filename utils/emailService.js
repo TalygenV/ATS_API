@@ -158,55 +158,88 @@ async function sendInterviewAssignmentToCandidate({
   interviewerName,
   interviewLink,
 }) {
-  const formattedDate = new Date(interviewDate).toLocaleString('en-US', {
-    weekday: 'long',
+  // const formattedDate = new Date(interviewDate).toLocaleString('en-US', {
+  //   weekday: 'long',
+  //   year: 'numeric',
+  //   month: 'long',
+  //   day: 'numeric',
+  //   hour: '2-digit',
+  //   minute: '2-digit'
+  // });
+
+    const formattedDate = new Date(interviewDate).toLocaleDateString('en-IN', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
   });
 
-  const subject = `Interview Scheduled: ${jobTitle}`;
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background-color: #2196F3; color: white; padding: 20px; text-align: center; }
-        .content { padding: 20px; background-color: #f9f9f9; }
-        .info-box { background-color: white; padding: 15px; margin: 10px 0; border-left: 4px solid #2196F3; }
-        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h2>Interview Scheduled</h2>
-        </div>
-        <div class="content">
-          <p>Hello ${candidateName || 'Candidate'},</p>
-          <p>We are pleased to inform you that you have been selected for an interview for the following position:</p>
-          
-          <div class="info-box">
-            <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
-            <strong>Interview Date & Time:</strong> ${formattedDate}<br>
-            <strong>Interviewer:</strong> ${interviewerName || 'TBD'}<br>
-                <strong>Meeting Link:</strong> ${interviewLink || 'TBD'}
-          </div>
-          
-          <p>Please make sure to be available at the scheduled time. If you need to reschedule, please contact us as soon as possible.</p>
-          <p>We look forward to speaking with you!</p>
-        </div>
-        <div class="footer">
-          <p>This is an automated notification from the ATS System.</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
+  const formattedTime = new Date(interviewDate).toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+    const subject = `Interview Invitation – ${jobTitle || ''}`;
+   const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Interview Invitation</title>
+</head>
+<body style="font-family: Calibri, Arial, sans-serif; color:#000; line-height:1.6;">
+  <p>Dear ${candidateName || ''},</p>
+
+  <p>Greetings from <strong>Cogniter Technologies</strong>.</p>
+
+  <p>
+    We are pleased to invite you for an interview for the
+    <strong>${jobTitle || ''}</strong> position.
+    Please find the interview details below:
+  </p>
+
+  <p><strong>Interview Details:</strong></p>
+
+  <p>
+    <strong>Topic:</strong> ${jobTitle || ""} – ${candidateName || ''}<br/>
+    <strong>Date:</strong> ${formattedDate}<br/>
+    <strong>Time:</strong> ${formattedTime} (IST)
+  </p>
+
+  <p>
+    <strong> Meeting Link:</strong><br/>
+    <a href="${interviewLink || '#'}" target="_blank">
+      <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Join  Meeting</button>
+    </a>
+  </p>
+
+ 
+
+  <p>
+    Kindly join the meeting on time and ensure you have a stable internet
+    connection. Please keep your updated resume handy for reference.
+  </p>
+
+  <p>
+    If you are unable to attend at the scheduled time, kindly inform us in advance.
+  </p>
+
+  <p>We look forward to speaking with you.</p>
+
+  <br/>
+
+  <p>
+    <strong>Thanks & Regards,</strong><br/>
+    Human Resource<br/>
+    <span style="color:#C00000;">Cogniter Technologies</span><br/>
+    <a href="mailto:jsingh@cogniter.com">jsingh@cogniter.com</a> |
+    <a href="mailto:nikhilsharma@cogniter.com">nikhilsharma@cogniter.com</a> | 
+    <a href="https://www.cogniter.com" target="_blank">www.cogniter.com</a>
+  </p>
+</body>
+</html>
+`;
+
 
   return await sendEmail({
     to: candidateEmail,
