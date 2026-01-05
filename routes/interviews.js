@@ -154,6 +154,8 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
       await sendInterviewAssignmentToInterviewer({
         // interviewerEmail: interviewer.email,
         interviewerEmail : 'ssrivastav@zorbis.com',
+         meetingId : interviewLink.meeting_id,
+        meetingPassword : interviewLink.password,
         interviewerName: interviewer.full_name || interviewer.email,
         candidateName,
         candidateEmail,
@@ -167,6 +169,8 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
         candidateEmail : 'ssrivastav@cogniter.com',
+         meetingId : interviewLink.meeting_id,
+        meetingPassword : interviewLink.password,
         candidateName,
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
@@ -429,6 +433,8 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
       await sendInterviewAssignmentToInterviewer({
         // interviewerEmail: interviewer.email,
         interviewerEmail : 'ssrivastav@zorbis.com',
+         meetingId : interviewLink.meeting_id,
+        meetingPassword : interviewLink.password,
         interviewerName: interviewer.full_name || interviewer.email,
         candidateName,
         candidateEmail,
@@ -442,6 +448,8 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
         candidateEmail : 'ssrivastav@cogniter.com',
+         meetingId : interviewLink.meeting_id,
+        meetingPassword : interviewLink.password,
         candidateName,
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
@@ -1368,6 +1376,8 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
         await sendInterviewAssignmentToInterviewer({
           // interviewerEmail: interviewer.email,
           interviewerEmail: 'ssrivastav@zorbis.com',
+           meetingId : interviewLink.meeting_id,
+        meetingPassword : interviewLink.password,
           interviewerName: interviewer.full_name || interviewer.email,
           candidateName,
           candidateEmail,
@@ -1383,6 +1393,8 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
       const interviewerNames = interviewers.map(i => i.full_name || i.email).join(', ');
       await sendInterviewAssignmentToCandidate({
         candidateEmail: 'ssrivastav@cogniter.com',
+         meetingId : interviewLink.meeting_id,
+        meetingPassword : interviewLink.password,
         candidateName,
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),

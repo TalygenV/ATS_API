@@ -1,6 +1,8 @@
 // const nodemailer = require('nodemailer');
 
-const transporter  = require("./transpoter");
+// const transporter  = require("./transpoter");
+
+getSmtpTransporter = require("./transpoter");
 
 // // Email configuration from environment variables
 // const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
@@ -35,15 +37,14 @@ const transporter  = require("./transpoter");
  * @returns {Promise<boolean>} - Returns true if email sent successfully
  */
 async function sendEmail({ to, subject, html, text }) {
-  if (!transporter) {
-    console.warn('Email service not configured. Email would have been sent to:', to);
-    console.warn('Subject:', subject);
-    console.warn('To configure email, set EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASSWORD in .env');
-    return false;
-  }
+
+
+
 
   try {
+    const { transporter, from } = await getSmtpTransporter();
     const mailOptions = {
+      from,
       to,
       subject,
       html,
@@ -72,6 +73,8 @@ async function sendEmail({ to, subject, html, text }) {
  */
 async function sendInterviewAssignmentToInterviewer({
   interviewerEmail,
+   meetingId,
+  meetingPassword,
   interviewerName,
   candidateName,
   candidateEmail,
@@ -125,6 +128,11 @@ async function sendInterviewAssignmentToInterviewer({
           <p>Please log in to the ATS system to view the candidate's resume and prepare for the interview.</p>
           <p>After the interview, you will be able to submit your feedback and rating.</p>
         </div>
+
+           <p>
+    <strong>Meeting ID:</strong> ${meetingId || 'N/A'}<br/>
+    <strong>Passcode:</strong> ${meetingPassword || 'N/A'}
+  </p>
         <div class="footer">
           <p>This is an automated notification from the ATS System.</p>
         </div>
@@ -152,6 +160,8 @@ async function sendInterviewAssignmentToInterviewer({
  */
 async function sendInterviewAssignmentToCandidate({
   candidateEmail,
+   meetingId,
+  meetingPassword,
   candidateName,
   jobTitle,
   interviewDate,
@@ -213,7 +223,10 @@ async function sendInterviewAssignmentToCandidate({
     </a>
   </p>
 
- 
+   <p>
+    <strong>Meeting ID:</strong> ${meetingId || 'N/A'}<br/>
+    <strong>Passcode:</strong> ${meetingPassword || 'N/A'}
+  </p>
 
   <p>
     Kindly join the meeting on time and ensure you have a stable internet

@@ -879,6 +879,8 @@ router.post('/:token/book-slot', async (req, res) => {
       await sendInterviewAssignmentToInterviewer({
           // interviewerEmail: interviewer.email,
         interviewerEmail : 'ssrivastav@zorbis.com',
+        meetingId : interviewLink.meeting_id,
+        meetingPassword : interviewLink.password,
         interviewerName: slot.interviewer_name || slot.interviewer_email,
         candidateName,
         candidateEmail,
@@ -892,6 +894,8 @@ router.post('/:token/book-slot', async (req, res) => {
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
          candidateEmail : 'ssrivastav@cogniter.com',
+          meetingId : interviewLink.meeting_id,
+        meetingPassword : interviewLink.password,
         candidateName,
         jobTitle,
         interviewDate: fromUTCString(slot.start_time),

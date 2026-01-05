@@ -1,69 +1,85 @@
+const axios = require("axios");
+const { queryOne } = require("../config/database");
 
-
-const axios = require('axios');
+let cachedToken = null;
+let tokenExpiry = null;
 
 const generateInterViewLink = async (meetingDetails) => {
+  // 1️⃣ Fetch Zoom config
+  const zoomConfig = await queryOne(`
+    SELECT *
+    FROM meeting_settings
+    WHERE type = 'zoom'
+      AND status = 'active'
+    LIMIT 1
+  `);
 
-    async function getAccessToken() {
-         const accountId = process.env.ZOOM_ACCOUNT_ID;
-         const clientId = process.env.ZOOM_CLIENT_ID;
-         const clientSecret = process.env.ZOOM_CLIENT_SECRET;
-        const authUrl = "https://zoom.us/oauth/token";
+  if (!zoomConfig) {
+    throw new Error("Zoom meeting configuration not found");
+  }
 
-        // Encode Client ID and Client Secret in Base64
-        const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  // 2️⃣ Validate input
+  if (!meetingDetails?.start_time || !meetingDetails?.topic) {
+    throw new Error("Invalid meeting details");
+  }
 
-        try {
-            const response = await axios.post(`${authUrl}?grant_type=account_credentials&account_id=${accountId}`, null, {
-                headers: {
-                    'Authorization': `Basic ${authHeader}`
-                }
-            });
-
-            return response.data.access_token;
-        } catch (error) {
-            console.error("Error getting access token:", error);
-            return undefined;
-        }
+  // 3️⃣ Get cached access token
+  async function getAccessToken() {
+    if (cachedToken && tokenExpiry > Date.now()) {
+      return cachedToken;
     }
 
-    async function createZoomMeeting(meetingDetails) {
-        const apiBaseUrl = "https://api.zoom.us/v2";
-        const token = await getAccessToken();
+    const authUrl = "https://zoom.us/oauth/token";
+    const authHeader = Buffer
+      .from(`${zoomConfig.ZOOM_CLIENT_ID}:${zoomConfig.ZOOM_CLIENT_SECRET}`)
+      .toString("base64");
 
-        if (!token) return;
+    const response = await axios.post(
+      `${authUrl}?grant_type=account_credentials&account_id=${zoomConfig.ZOOM_ACCOUNT_ID}`,
+      null,
+      {
+        headers: { Authorization: `Basic ${authHeader}` },
+      }
+    );
 
-        const meetingConfig = {
-            topic: meetingDetails.topic,
-            type: 2, // Scheduled meeting
-            timezone: "UTC", // ✅ REQUIRED
-            start_time: meetingDetails.start_time, // ISO 8601 format, e.g., '2025-02-15T10:00:00Z'
-            duration: meetingDetails.duration, // minutes
-            password: '45#$F^HBAS', // ensure max 10
-            settings: {
-                join_before_host: true,
-                waiting_room: false,
-                // ... other settings
-            }
-        };
-        try {
-            const response = await axios.post(`${apiBaseUrl}/users/me/meetings`, meetingConfig, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-        
-            return response.data;
+    cachedToken = response.data.access_token;
+    tokenExpiry = Date.now() + (response.data.expires_in - 60) * 1000;
 
-        } catch (error) {
-            console.log("Error", error.response.data , "Error");
-            return error.response.data
-            
-        }
+    return cachedToken;
+  }
+
+  // 4️⃣ Create meeting
+  const token = await getAccessToken();
+
+  const meetingConfig = {
+    topic: meetingDetails.topic,
+    type: 2,
+    timezone: "UTC",
+    start_time: meetingDetails.start_time, // MUST be UTC ISO
+    duration: meetingDetails.duration || 30,
+    settings: {
+      join_before_host: zoomConfig.Zoom_join_before_host === 1,
+      waiting_room: zoomConfig.Zoom_waiting_room === 1,
+    },
+  };
+
+  const response = await axios.post(
+    "https://api.zoom.us/v2/users/me/meetings",
+    meetingConfig,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
     }
+  );
 
-    return await createZoomMeeting(meetingDetails);
+  return {
+    meeting_id: response.data.id,
+    join_url: response.data.join_url,
+    start_url: response.data.start_url,
+    password: response.data.password,
+  };
 };
 
 module.exports = { generateInterViewLink };
