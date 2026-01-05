@@ -260,7 +260,7 @@ CREATE TABLE SMTPSetting (
     smtp_port VARCHAR(255) NOT NULL,
     is_secure_smtp TINYINT(1) NOT NULL,
     smtp_type VARCHAR(255) NOT NULL,
-    created_by BIGINT NOT NULL,
+    created_by VARCHAR(255) NOT NULL,
     created_at DATETIME NOT NULL,
     status VARCHAR(10) NOT NULL,
     PRIMARY KEY (id)
