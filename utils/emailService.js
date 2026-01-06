@@ -80,7 +80,8 @@ async function sendInterviewAssignmentToInterviewer({
   candidateEmail,
   jobTitle,
   interviewDate,
-  interViewLink
+  interViewLink,
+  interViewJoinLink,
 }) {
   
 
@@ -123,8 +124,15 @@ async function sendInterviewAssignmentToInterviewer({
   </p>
 
   <p>
-    <strong> Meeting Link:</strong><br/>
+    <strong> Start Meeting Link:</strong><br/>
     <a href="${interViewLink || '#'}" target="_blank">
+      <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Start  Meeting</button>
+    </a>
+  </p>
+
+    <p>
+    <strong> Join Meeting Link:</strong><br/>
+    <a href="${interViewJoinLink || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Join  Meeting</button>
     </a>
   </p>
@@ -136,7 +144,7 @@ async function sendInterviewAssignmentToInterviewer({
 
   <p>
     Kindly join the meeting on time and ensure you have a stable internet
-    connection. Please keep your updated resume handy for reference.
+    connection. Please review the candidate's resume and job description prior to the interview.
   </p>
 
   <p>

@@ -162,7 +162,8 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
         candidateEmail,
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
-        interViewLink : interviewLink.start_url
+        interViewLink : interviewLink.start_url,
+        interViewJoinLink : interviewLink.join_url  
       });
     }
 
@@ -282,17 +283,6 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     <strong>Meeting ID:</strong> ${interviewLink.meeting_id || 'N/A'}<br/>
     <strong>Passcode:</strong> ${interviewLink.password || 'N/A'}
   </p>
-
-  <p>
-    Kindly join the meeting on time and ensure you have a stable internet
-    connection. Please keep your updated resume handy for reference.
-  </p>
-
-  <p>
-    If you are unable to attend at the scheduled time, kindly inform us in advance.
-  </p>
-
-  <p>We look forward to speaking with you.</p>
 
   <br/>
 
@@ -495,7 +485,8 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
         candidateEmail,
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
-        interViewLink : interviewLink.start_url
+        interViewLink : interviewLink.start_url,
+         interViewJoinLink : interviewLink.join_url 
       });
     }
 
@@ -614,16 +605,6 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     <strong>Passcode:</strong> ${interviewLink.password || 'N/A'}
   </p>
 
-  <p>
-    Kindly join the meeting on time and ensure you have a stable internet
-    connection. Please keep your updated resume handy for reference.
-  </p>
-
-  <p>
-    If you are unable to attend at the scheduled time, kindly inform us in advance.
-  </p>
-
-  <p>We look forward to speaking with you.</p>
 
   <br/>
 
@@ -1490,7 +1471,8 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
           candidateEmail,
           jobTitle,
           interviewDate: slotDate,
-          interViewLink: interviewLink.start_url
+          interViewLink: interviewLink.start_url,
+           interViewJoinLink : interviewLink.join_url 
         });
       }
     }
@@ -1566,16 +1548,7 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
     <strong>Passcode:</strong> ${interviewLink.password || 'N/A'}
   </p>
 
-  <p>
-    Kindly join the meeting on time and ensure you have a stable internet
-    connection. Please keep your updated resume handy for reference.
-  </p>
 
-  <p>
-    If you are unable to attend at the scheduled time, kindly inform us in advance.
-  </p>
-
-  <p>We look forward to speaking with you.</p>
 
   <br/>
 

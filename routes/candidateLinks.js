@@ -884,7 +884,8 @@ router.post('/:token/book-slot', async (req, res) => {
         candidateEmail,
         jobTitle,
         interviewDate: fromUTCString(slot.start_time),
-         interViewLink : interviewLink.start_url
+         interViewLink : interviewLink.start_url,
+          interViewJoinLink : interviewLink.join_url 
       });
     }
 
@@ -957,16 +958,7 @@ router.post('/:token/book-slot', async (req, res) => {
     <strong>Passcode:</strong> ${interviewLink.password || 'N/A'}
   </p>
 
-  <p>
-    Kindly join the meeting on time and ensure you have a stable internet
-    connection. Please keep your updated resume handy for reference.
-  </p>
-
-  <p>
-    If you are unable to attend at the scheduled time, kindly inform us in advance.
-  </p>
-
-  <p>We look forward to speaking with you.</p>
+ 
 
   <br/>
 
