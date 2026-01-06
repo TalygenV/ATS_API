@@ -241,4 +241,240 @@ router.put('/zoom', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
+
+
+// Get groq API keys (Admin only)
+router.get('/groq', authenticate, requireAdmin, async (req, res) => {
+  try {
+    // Get all active groq settings, sorted by active status first, then by modified date
+    const groqSettings = await query(
+      `SELECT id, GROQ_API_Key as api_key, GROQ_STATUS as is_active, Modified_at
+       FROM AI_Settings 
+       WHERE status = 'active' AND Type = 'groq'
+       ORDER BY GROQ_STATUS DESC, Modified_at DESC`
+    );
+
+    res.json({
+      success: true,
+      data: groqSettings.map(setting => ({
+        ...setting,
+        is_active: Boolean(setting.is_active)
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching groq settings:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch groq settings',
+      message: error.message
+    });
+  }
+});
+
+// Add groq API key (Admin only)
+router.post('/groq', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { api_key } = req.body;
+
+    // Validate required fields
+    if (!api_key) {
+      return res.status(400).json({
+        success: false,
+        error: 'API key is required'
+      });
+    }
+
+    // Check if the API key already exists
+    const existingKey = await queryOne(
+      `SELECT id FROM AI_Settings 
+       WHERE GROQ_API_Key = ? AND status = 'active' AND Type = 'groq'`,
+      [api_key]
+    );
+
+    if (existingKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'This API key already exists'
+      });
+    }
+
+    // Insert new groq setting as inactive
+       await query(
+      `INSERT INTO AI_Settings 
+       (Type, GROQ_API_Key, GROQ_STATUS, Modified_by, Modified_at, status) 
+       VALUES (?, ?, ?, ?, NOW(), 'active')`,
+      [
+        'groq',
+        api_key,
+        0, // GROQ_STATUS inactive
+        req.user.id // Modified_by
+      ]
+    );
+
+  
+
+    res.json({
+      success: true,
+      message: 'groq API key added successfully'
+    });
+  } catch (error) {
+    console.error('Error adding groq API key:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to add groq API key',
+      message: error.message
+    });
+  }
+});
+
+// Update groq API key status (Admin only)
+router.patch('/groq/:id/status', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { is_active } = req.body;
+
+    const keyId = parseInt(id, 10);
+    if (isNaN(keyId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid key ID'
+      });
+    }
+
+    // Validate is_active
+    if (typeof is_active !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        error: 'is_active must be a boolean'
+      });
+    }
+
+    if (is_active) {
+      // If enabling, disable all other active keys first
+      await query(
+        `UPDATE AI_Settings 
+         SET GROQ_STATUS = 0, Modified_by = ?, Modified_at = NOW() 
+         WHERE status = 'active' AND Type = 'groq' AND id != ?`,
+        [req.user.id, keyId]
+      );
+    } else {
+      // If disabling, check if it's the only active key
+      const activeCount = await queryOne(
+        `SELECT COUNT(*) as count FROM AI_Settings 
+         WHERE status = 'active' AND Type = 'groq' AND GROQ_STATUS = 1`
+      );
+      if (activeCount.count <= 1) {
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot disable the last active groq API key'
+        });
+      }
+    }
+
+    // Update the status
+    const result = await query(
+      `UPDATE AI_Settings 
+       SET GROQ_STATUS = ?, Modified_by = ?, Modified_at = NOW() 
+       WHERE id = ? AND status = 'active' AND Type = 'groq'`,
+      [
+        is_active ? 1 : 0,
+        req.user.id,
+        keyId
+      ]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'groq API key not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'groq API key status updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating groq API key status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update groq API key status',
+      message: error.message
+    });
+  }
+});
+
+
+
+// Delete groq API key (Admin only) - Permanent delete
+router.delete('/groq/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const keyId = parseInt(id, 10);
+    if (isNaN(keyId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid key ID'
+      });
+    }
+
+    // Check if the key exists and is active
+    const existingKey = await queryOne(
+      `SELECT id, GROQ_STATUS FROM AI_Settings 
+       WHERE id = ? AND status = 'active' AND Type = 'groq'`,
+      [keyId]
+    );
+
+    if (!existingKey) {
+      return res.status(404).json({
+        success: false,
+        error: 'groq API key not found'
+      });
+    }
+
+    // If it's the only active key, prevent deletion
+    if (existingKey.GROQ_STATUS === 1) {
+      const activeCount = await queryOne(
+        `SELECT COUNT(*) as count FROM AI_Settings 
+         WHERE status = 'active' AND Type = 'groq' AND GROQ_STATUS = 1`
+      );
+      if (activeCount.count <= 1) {
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot delete the last active groq API key'
+        });
+      }
+    }
+
+    // Permanent delete
+    const result = await query(
+      `DELETE FROM AI_Settings 
+       WHERE id = ? AND status = 'active' AND Type = 'groq'`,
+      [keyId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'groq API key not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'groq API key deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting groq API key:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete groq API key',
+      message: error.message
+    });
+  }
+});
+
+
+
 module.exports = router;

@@ -286,3 +286,18 @@ CREATE TABLE Meeting_Settings (
 ) ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
+
+
+-- AI Setting Table ---------05/01/2026--------------------Jaid-------------
+CREATE TABLE AI_Settings (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    Type VARCHAR(255) NOT NULL,
+    GROQ_API_Key VARCHAR(255) NULL,
+    GROQ_STATUS TINYINT(1)  NULL,
+    Modified_by VARCHAR(255) NOT NULL,
+    Modified_at DATETIME NOT NULL,
+    status VARCHAR(10) NOT NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
+COLLATE=utf8mb4_unicode_ci;

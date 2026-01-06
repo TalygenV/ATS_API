@@ -1,4 +1,5 @@
-const groq = require('../config/groq');
+// const groq = require('../config/groq');
+const { getGroqClient } = require('../config/groq')
 const pdfParse = require('pdf-parse');
 const PDFParser = require('pdf2json');
 const mammoth = require('mammoth');
@@ -169,6 +170,7 @@ Return ONLY the JSON object, nothing else.`;
   let lastError = null;
   
   try {
+    const groq = await getGroqClient();
     console.log(`   🔄 Using Groq model: ${modelName}`);
     
     // Retry API call with exponential backoff

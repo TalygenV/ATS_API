@@ -1,4 +1,5 @@
-const groq = require('../config/groq');
+// const groq = require('../config/groq');
+const { getGroqClient } = require('../config/groq')
 
 /**
  * Extract JSON from text by finding matching braces
@@ -164,7 +165,7 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
 
   try {
     console.log(`   🔄 Using Groq model for question generation: ${modelName}`);
-
+    const groq = await getGroqClient();
     const result = await retryWithBackoff(async () => {
       return await groq.chat.completions.create({
         messages: [
@@ -325,7 +326,7 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
 
   try {
     console.log(`   🔄 Using Groq model for job description extraction: ${modelName}`);
-
+    const groq = await getGroqClient();
     const result = await retryWithBackoff(async () => {
       return await groq.chat.completions.create({
         messages: [
