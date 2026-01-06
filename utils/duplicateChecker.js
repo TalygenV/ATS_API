@@ -9,9 +9,9 @@ const { queryOne, query } = require('../config/database');
 async function findOriginalResume(parsedData) {
   try {
     const email = parsedData.email?.toLowerCase().trim();
-    const name = parsedData.name?.toLowerCase().trim();
+    // const name = parsedData.name?.toLowerCase().trim();
 
-    if (!email && !name) {
+    if (!email ) {
       // Can't check for duplicates without email or name
       return null;
     }
@@ -34,20 +34,20 @@ async function findOriginalResume(parsedData) {
       );
     }
 
-    if (!original && name) {
-      // Fallback to name if no email match - case-insensitive
-      original = await queryOne(
-        `SELECT id, email, name, created_at, parent_id, version_number 
-         FROM resumes 
-         WHERE LOWER(name) = ? 
-         ORDER BY 
-           CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END,
-           version_number ASC,
-           created_at ASC 
-         LIMIT 1`,
-        [name]
-      );
-    }
+    // if (!original && name) {
+    //   // Fallback to name if no email match - case-insensitive
+    //   original = await queryOne(
+    //     `SELECT id, email, name, created_at, parent_id, version_number 
+    //      FROM resumes 
+    //      WHERE LOWER(name) = ? 
+    //      ORDER BY 
+    //        CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END,
+    //        version_number ASC,
+    //        created_at ASC 
+    //      LIMIT 1`,
+    //     [name]
+    //   );
+    // }
 
     if (original) {
       // If the found resume has a parent_id, return the parent_id (the true original)
@@ -57,27 +57,27 @@ async function findOriginalResume(parsedData) {
 
     // If we have both email and name, also check for name match with same email
     // This handles cases where email might be slightly different but name matches
-    if (email && name) {
-      const nameMatch = await queryOne(
-        `SELECT id, email, name, created_at, parent_id, version_number 
-         FROM resumes 
-         WHERE LOWER(name) = ? 
-         ORDER BY 
-           CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END,
-           version_number ASC,
-           created_at ASC 
-         LIMIT 1`,
-        [name]
-      );
+    // if (email && name) {
+    //   const nameMatch = await queryOne(
+    //     `SELECT id, email, name, created_at, parent_id, version_number 
+    //      FROM resumes 
+    //      WHERE LOWER(name) = ? 
+    //      ORDER BY 
+    //        CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END,
+    //        version_number ASC,
+    //        created_at ASC 
+    //      LIMIT 1`,
+    //     [name]
+    //   );
 
-      if (nameMatch) {
-        // Check if the email also matches (case-insensitive)
-        const existingEmail = nameMatch.email?.toLowerCase().trim();
-        if (existingEmail && existingEmail === email) {
-          return nameMatch.parent_id || nameMatch.id;
-        }
-      }
-    }
+    //   if (nameMatch) {
+    //     // Check if the email also matches (case-insensitive)
+    //     const existingEmail = nameMatch.email?.toLowerCase().trim();
+    //     if (existingEmail && existingEmail === email) {
+    //       return nameMatch.parent_id || nameMatch.id;
+    //     }
+    //   }
+    // }
 
     return null;
   } catch (error) {
