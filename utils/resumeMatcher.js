@@ -62,7 +62,7 @@ async function matchResumeWithJobDescription(resumeText, jobDescription, parsedR
   // Using Groq's llama-3.1-8b-instant model
   const modelName = 'llama-3.1-8b-instant';
   
-  const prompt = `You are an expert HR recruiter evaluating a candidate's resume against a job description. Analyze the resume and job description, then provide a comprehensive matching score and detailed analysis.
+  const prompt = `You are an expert Technical Recruiter evaluating a candidate's resume against a job description. Analyze the resume and job description, then provide a comprehensive matching score and detailed analysis.
 
 RESUME INFORMATION:
 - Name: ${parsedResumeData.name || 'Not provided'}
@@ -99,7 +99,7 @@ IMPORTANT INSTRUCTIONS:
 3. For skills_match: Compare technical skills, tools, frameworks, and soft skills mentioned in the job description with those in the resume
 4. For experience_match: Consider years of experience, relevant industry experience, role similarity, and achievements
 5. For education_match: Consider degree level, field of study, and institution quality
-6. For overall_match: Calculate a weighted average (skills: 40%, experience: 40%, education: 20%)
+6. For overall_match: Calculate a weighted average (skills: 40%, experience: 40%, education: 20%) Strictly follow the weights and do not change them.
 7. Set status as:
    - "accepted" if overall_match >= 70
    - "pending" if overall_match >= 50 and < 70
