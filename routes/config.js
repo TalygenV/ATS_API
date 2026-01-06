@@ -278,7 +278,7 @@ router.post('/groq', authenticate, requireAdmin, async (req, res) => {
 
     // Validate required fields
     if (!api_key) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'API key is required'
       });
@@ -292,7 +292,7 @@ router.post('/groq', authenticate, requireAdmin, async (req, res) => {
     );
 
     if (existingKey) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'This API key already exists'
       });
@@ -335,7 +335,7 @@ router.patch('/groq/:id/status', authenticate, requireAdmin, async (req, res) =>
 
     const keyId = parseInt(id, 10);
     if (isNaN(keyId)) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'Invalid key ID'
       });
@@ -343,7 +343,7 @@ router.patch('/groq/:id/status', authenticate, requireAdmin, async (req, res) =>
 
     // Validate is_active
     if (typeof is_active !== 'boolean') {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'is_active must be a boolean'
       });
@@ -364,7 +364,7 @@ router.patch('/groq/:id/status', authenticate, requireAdmin, async (req, res) =>
          WHERE status = 'active' AND Type = 'groq' AND GROQ_STATUS = 1`
       );
       if (activeCount.count <= 1) {
-        return res.status(400).json({
+        return res.status(200).json({
           success: false,
           error: 'Cannot disable the last active groq API key'
         });
@@ -384,7 +384,7 @@ router.patch('/groq/:id/status', authenticate, requireAdmin, async (req, res) =>
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
         error: 'groq API key not found'
       });
@@ -413,7 +413,7 @@ router.delete('/groq/:id', authenticate, requireAdmin, async (req, res) => {
 
     const keyId = parseInt(id, 10);
     if (isNaN(keyId)) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'Invalid key ID'
       });
@@ -427,7 +427,7 @@ router.delete('/groq/:id', authenticate, requireAdmin, async (req, res) => {
     );
 
     if (!existingKey) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
         error: 'groq API key not found'
       });
@@ -440,7 +440,7 @@ router.delete('/groq/:id', authenticate, requireAdmin, async (req, res) => {
          WHERE status = 'active' AND Type = 'groq' AND GROQ_STATUS = 1`
       );
       if (activeCount.count <= 1) {
-        return res.status(400).json({
+        return res.status(200).json({
           success: false,
           error: 'Cannot delete the last active groq API key'
         });
@@ -455,7 +455,7 @@ router.delete('/groq/:id', authenticate, requireAdmin, async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
         error: 'groq API key not found'
       });
