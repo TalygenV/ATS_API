@@ -832,8 +832,6 @@ router.post('/:token/book-slot', async (req, res) => {
 
     // Update evaluation with interviewer and interview date (convert to UTC)
     const interviewDateUTC = toUTCString(slot.start_time);
-
-
     // Determine a system user to record assignment (first Admin or HR)
     const systemUser = await queryOne(
       "SELECT id FROM users WHERE role IN ('Admin', 'HR') ORDER BY created_at ASC LIMIT 1"
@@ -915,19 +913,63 @@ router.post('/:token/book-slot', async (req, res) => {
         const html = `
           <!DOCTYPE html>
           <html>
-          <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <h2>Interview Scheduled by Candidate</h2>
-            <p>The candidate has selected an interview slot:</p>
-            <ul>
-              <li><strong>Candidate:</strong> ${candidateName}</li>
-              <li><strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}</li>
-              <li><strong>Job Position:</strong> ${jobTitle}</li>
-              <li><strong>Interviewer:</strong> ${slot.interviewer_name || slot.interviewer_email}</li>
-              <li><strong>User Link:</strong> ${interviewLink.join_url}</li>
-              <li><strong>Interviewer Link:</strong> ${interviewLink.start_url}</li>
-              <li><strong>Date & Time:</strong> ${fromUTCString(slot.start_time) ? fromUTCString(slot.start_time).toLocaleString('en-US') : 'N/A'}</li>
-            </ul>
-          </body>
+           <body style="font-family: Calibri, Arial, sans-serif; color:#000; line-height:1.6;">
+
+  <p>Greetings from <strong>Cogniter Technologies</strong>.</p>
+   <p>Interview Scheduled by Candidate</p>
+    <p>The candidate has selected an interview slot:</p>
+  <p><strong>Interview Details:</strong></p>
+
+  <p>
+      <strong>Candidate Name:</strong> ${candidateName || 'N/A'}<br>
+            <strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}<br>
+            <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
+            <strong>Interviewer:</strong> ${slot.interviewer_name || slot.interviewer_email}<br>
+            <strong>Interview Date & Time:</strong> ${fromUTCString(slot.start_time) ? fromUTCString(slot.start_time).toLocaleDateString('en-IN') : 'N/A'}<br>
+  </p>
+
+  <p>
+    <strong> Start Meeting Link:</strong><br/>
+    <a href="${interviewLink.start_url || '#'}" target="_blank">
+      <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Start  Meeting</button>
+    </a>
+  </p>
+
+    <p>
+    <strong> Join Meeting Link:</strong><br/>
+    <a href="${interviewLink.join_url || '#'}" target="_blank">
+      <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Join Meeting</button>
+    </a>
+  </p>
+
+   <p>
+    <strong>Meeting ID:</strong> ${interviewLink.meeting_id || 'N/A'}<br/>
+    <strong>Passcode:</strong> ${interviewLink.password || 'N/A'}
+  </p>
+
+  <p>
+    Kindly join the meeting on time and ensure you have a stable internet
+    connection. Please keep your updated resume handy for reference.
+  </p>
+
+  <p>
+    If you are unable to attend at the scheduled time, kindly inform us in advance.
+  </p>
+
+  <p>We look forward to speaking with you.</p>
+
+  <br/>
+
+  <p>
+    <strong>Thanks & Regards,</strong><br/>
+    Human Resource<br/>
+    <span style="color:#C00000;">Cogniter Technologies</span><br/>
+    <a href="mailto:jsingh@cogniter.com">jsingh@cogniter.com</a> |
+    <a href="mailto:nikhilsharma@cogniter.com">nikhilsharma@cogniter.com</a> | 
+    <a href="https://www.cogniter.com" target="_blank">www.cogniter.com</a>
+  </p>
+</body>
+          
           </html>
         `;
         sendEmail({

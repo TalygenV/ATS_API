@@ -113,6 +113,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
 
     // Convert interview date to UTC
     const interviewDateUTC = toUTCString(finalInterviewDate);
+   
 
     // Generate interview link
     const interviewLink = await generateInterViewLink({
@@ -238,19 +239,62 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
         const html = `
           <!DOCTYPE html>
           <html>
-          <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <h2>Interview Scheduled</h2>
-            <p>An interview has been scheduled with the following details:</p>
-            <ul>
-              <li><strong>Candidate:</strong> ${candidateName}</li>
-              <li><strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}</li>
-              <li><strong>Job Position:</strong> ${jobTitle}</li>
-              <li><strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}</li>
-                 <li><strong>Interviewer Link:</strong> ${interviewLink.start_url}</li>
-                  <li><strong>User Link Link:</strong> ${interviewLink.join_url}</li>
-              <li><strong>Date & Time:</strong> ${fromUTCString(finalInterviewDate) ? fromUTCString(finalInterviewDate).toLocaleString('en-US') : 'N/A'}</li>
-            </ul>
-          </body>
+
+              <body style="font-family: Calibri, Arial, sans-serif; color:#000; line-height:1.6;">
+
+  <p>Greetings from <strong>Cogniter Technologies</strong>.</p>
+   <p>Interview Scheduled</p>
+  <p><strong>Interview Details:</strong></p>
+
+  <p>
+      <strong>Candidate Name:</strong> ${candidateName || 'N/A'}<br>
+            <strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}<br>
+            <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
+            <strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}<br>
+            <strong>Interview Date & Time:</strong> ${fromUTCString(interviewDateUTC) ? fromUTCString(interviewDateUTC).toLocaleDateString('en-IN') : 'N/A'}<br>
+  </p>
+
+  <p>
+    <strong> Start Meeting Link:</strong><br/>
+    <a href="${interviewLink.start_url || '#'}" target="_blank">
+      <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Start  Meeting</button>
+    </a>
+  </p>
+
+    <p>
+    <strong> Join Meeting Link:</strong><br/>
+    <a href="${interviewLink.join_url || '#'}" target="_blank">
+      <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Join Meeting</button>
+    </a>
+  </p>
+
+   <p>
+    <strong>Meeting ID:</strong> ${interviewLink.meeting_id || 'N/A'}<br/>
+    <strong>Passcode:</strong> ${interviewLink.password || 'N/A'}
+  </p>
+
+  <p>
+    Kindly join the meeting on time and ensure you have a stable internet
+    connection. Please keep your updated resume handy for reference.
+  </p>
+
+  <p>
+    If you are unable to attend at the scheduled time, kindly inform us in advance.
+  </p>
+
+  <p>We look forward to speaking with you.</p>
+
+  <br/>
+
+  <p>
+    <strong>Thanks & Regards,</strong><br/>
+    Human Resource<br/>
+    <span style="color:#C00000;">Cogniter Technologies</span><br/>
+    <a href="mailto:jsingh@cogniter.com">jsingh@cogniter.com</a> |
+    <a href="mailto:nikhilsharma@cogniter.com">nikhilsharma@cogniter.com</a> | 
+    <a href="https://www.cogniter.com" target="_blank">www.cogniter.com</a>
+  </p>
+</body>
           </html>
         `;
 
@@ -392,6 +436,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     // Convert interview date to UTC
     const interviewDateUTC = toUTCString(finalInterviewDate);
 
+      
     // Generate interview link
     const interviewLink = await generateInterViewLink({
       topic: "INTERVIEW",
@@ -516,19 +561,61 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
         const html = `
           <!DOCTYPE html>
           <html>
-          <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <h2>Interview Schedule Updated</h2>
-            <p>An interview schedule has been updated with the following details:</p>
-            <ul>
-              <li><strong>Candidate:</strong> ${candidateName}</li>
-              <li><strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}</li>
-              <li><strong>Job Position:</strong> ${jobTitle}</li>
-              <li><strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}</li>
-                <li><strong>User Link :</strong> ${interviewLink.join_url}</li>
-              <li><strong>Interviewer Link:</strong> ${interviewLink.start_url}</li>
-              <li><strong>New Date & Time:</strong> ${fromUTCString(finalInterviewDate) ? fromUTCString(finalInterviewDate).toLocaleString('en-US') : 'N/A'}</li>
-            </ul>
-          </body>
+          <body style="font-family: Calibri, Arial, sans-serif; color:#000; line-height:1.6;">
+
+  <p>Greetings from <strong>Cogniter Technologies</strong>.</p>
+   <p>Interview Scheduled Updated</p>
+  <p><strong>Interview Details:</strong></p>
+
+  <p>
+      <strong>Candidate Name:</strong> ${candidateName || 'N/A'}<br>
+            <strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}<br>
+            <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
+            <strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}<br>
+            <strong>Interview Date & Time:</strong> ${fromUTCString(interviewDateUTC) ? fromUTCString(interviewDateUTC).toLocaleDateString('en-IN') : 'N/A'}<br>
+  </p>
+
+  <p>
+    <strong> Start Meeting Link:</strong><br/>
+    <a href="${interviewLink.start_url || '#'}" target="_blank">
+      <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Start  Meeting</button>
+    </a>
+  </p>
+
+    <p>
+    <strong> Join Meeting Link:</strong><br/>
+    <a href="${interviewLink.join_url || '#'}" target="_blank">
+      <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Join Meeting</button>
+    </a>
+  </p>
+
+   <p>
+    <strong>Meeting ID:</strong> ${interviewLink.meeting_id || 'N/A'}<br/>
+    <strong>Passcode:</strong> ${interviewLink.password || 'N/A'}
+  </p>
+
+  <p>
+    Kindly join the meeting on time and ensure you have a stable internet
+    connection. Please keep your updated resume handy for reference.
+  </p>
+
+  <p>
+    If you are unable to attend at the scheduled time, kindly inform us in advance.
+  </p>
+
+  <p>We look forward to speaking with you.</p>
+
+  <br/>
+
+  <p>
+    <strong>Thanks & Regards,</strong><br/>
+    Human Resource<br/>
+    <span style="color:#C00000;">Cogniter Technologies</span><br/>
+    <a href="mailto:jsingh@cogniter.com">jsingh@cogniter.com</a> |
+    <a href="mailto:nikhilsharma@cogniter.com">nikhilsharma@cogniter.com</a> | 
+    <a href="https://www.cogniter.com" target="_blank">www.cogniter.com</a>
+  </p>
+</body>
           </html>
         `;
 
@@ -1412,23 +1499,67 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
       const hrAdminEmails = hrAdminUsers.map(u => u.email).filter(Boolean);
       if (hrAdminEmails.length > 0) {
         const interviewerList = interviewers.map(i => i.full_name || i.email).join(', ');
-        const subject = `Bulk Interview Scheduled: ${candidateName} - ${jobTitle}`;
+        const subject = `Panel Interview Scheduled: ${candidateName} - ${jobTitle}`;
         const html = `
           <!DOCTYPE html>
           <html>
-          <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <h2>Bulk Interview Scheduled</h2>
-            <p>Multiple interviewers have been assigned with the following details:</p>
-            <ul>
-              <li><strong>Candidate:</strong> ${candidateName}</li>
-              <li><strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}</li>
-              <li><strong>Job Position:</strong> ${jobTitle}</li>
-              <li><strong>Interviewers (${interviewer_ids.length}):</strong> ${interviewerList}</li>
-              <li><strong>Interviewer Link:</strong> ${interviewLink.start_url}</li>
-              <li><strong>User Link:</strong> ${interviewLink.join_url}</li>
-              <li><strong>Date & Time:</strong> ${fromUTCString(interviewDateUTC) ? fromUTCString(interviewDateUTC).toLocaleString('en-US') : 'N/A'}</li>
-            </ul>
-          </body>
+          <body style="font-family: Calibri, Arial, sans-serif; color:#000; line-height:1.6;">
+
+  <p>Greetings from <strong>Cogniter Technologies</strong>.</p>
+   <p>Panel Interview Scheduled</p>
+  <p><strong>Interview Details:</strong></p>
+
+  <p>
+      <strong>Candidate Name:</strong> ${candidateName || 'N/A'}<br>
+            <strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}<br>
+            <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
+            <strong>Interviewers (${interviewer_ids.length}):</strong> ${interviewerList}<br>
+            <strong>Interview Date & Time:</strong> ${fromUTCString(interviewDateUTC) ? fromUTCString(interviewDateUTC).toLocaleDateString('en-IN') : 'N/A'}<br>
+  </p>
+
+  <p>
+    <strong> Start Meeting Link:</strong><br/>
+    <a href="${interviewLink.start_url || '#'}" target="_blank">
+      <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Start  Meeting</button>
+    </a>
+  </p>
+
+    <p>
+    <strong> Join Meeting Link:</strong><br/>
+    <a href="${interviewLink.join_url || '#'}" target="_blank">
+      <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Join Meeting</button>
+    </a>
+  </p>
+
+   <p>
+    <strong>Meeting ID:</strong> ${interviewLink.meeting_id || 'N/A'}<br/>
+    <strong>Passcode:</strong> ${interviewLink.password || 'N/A'}
+  </p>
+
+  <p>
+    Kindly join the meeting on time and ensure you have a stable internet
+    connection. Please keep your updated resume handy for reference.
+  </p>
+
+  <p>
+    If you are unable to attend at the scheduled time, kindly inform us in advance.
+  </p>
+
+  <p>We look forward to speaking with you.</p>
+
+  <br/>
+
+  <p>
+    <strong>Thanks & Regards,</strong><br/>
+    Human Resource<br/>
+    <span style="color:#C00000;">Cogniter Technologies</span><br/>
+    <a href="mailto:jsingh@cogniter.com">jsingh@cogniter.com</a> |
+    <a href="mailto:nikhilsharma@cogniter.com">nikhilsharma@cogniter.com</a> | 
+    <a href="https://www.cogniter.com" target="_blank">www.cogniter.com</a>
+  </p>
+</body>
+          
+
           </html>
         `;
 

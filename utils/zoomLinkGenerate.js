@@ -50,12 +50,14 @@ const generateInterViewLink = async (meetingDetails) => {
 
   // 4️⃣ Create meeting
   const token = await getAccessToken();
-
+  const zoomStartTime = new Date(
+  meetingDetails.start_time.replace(' ', 'T') + 'Z'
+).toISOString();
   const meetingConfig = {
     topic: meetingDetails.topic,
     type: 2,
     timezone: "UTC",
-    start_time: meetingDetails.start_time, // MUST be UTC ISO
+    start_time: zoomStartTime, // MUST be UTC ISO
     duration: meetingDetails.duration || 30,
     settings: {
       join_before_host: zoomConfig.Zoom_join_before_host === 1,

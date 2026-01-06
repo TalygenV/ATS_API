@@ -85,7 +85,7 @@ async function sendInterviewAssignmentToInterviewer({
   
 
  
-  const formattedDate = new Date(interviewDate).toLocaleString('en-US', {
+  const formattedDate = new Date(interviewDate).toLocaleString('en-IN', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
@@ -95,49 +95,63 @@ async function sendInterviewAssignmentToInterviewer({
   });
 
   const subject = `New Interview Assignment: ${candidateName} - ${jobTitle}`;
+  
   const html = `
     <!DOCTYPE html>
     <html>
     <head>
-      <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; }
-        .content { padding: 20px; background-color: #f9f9f9; }
-        .info-box { background-color: white; padding: 15px; margin: 10px 0; border-left: 4px solid #4CAF50; }
-        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-      </style>
+      <meta charset="UTF-8" />
+      <title>Interview Assignment Notification</title>
     </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h2>New Interview Assignment</h2>
-        </div>
-        <div class="content">
-          <p>Hello ${interviewerName || 'Interviewer'},</p>
-          <p>You have been assigned to conduct an interview for the following candidate:</p>
-          
-          <div class="info-box">
-            <strong>Candidate Name:</strong> ${candidateName || 'N/A'}<br>
+
+    <body style="font-family: Calibri, Arial, sans-serif; color:#000; line-height:1.6;">
+ <p>Hello ${interviewerName },</p>
+
+  <p>Greetings from <strong>Cogniter Technologies</strong>.</p>
+   <p>You have been assigned to conduct an interview for the following candidate:</p>
+  <p><strong>Interview Details:</strong></p>
+
+  <p>
+      <strong>Candidate Name:</strong> ${candidateName || 'N/A'}<br>
             <strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}<br>
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
             <strong>Interview Date & Time:</strong> ${formattedDate}<br>
-            <strong>Interview Link:</strong> ${interViewLink || 'N/A'}<br>
-          </div>
-          
-          <p>Please log in to the ATS system to view the candidate's resume and prepare for the interview.</p>
-          <p>After the interview, you will be able to submit your feedback and rating.</p>
-        </div>
+  </p>
 
-           <p>
+  <p>
+    <strong> Meeting Link:</strong><br/>
+    <a href="${interViewLink || '#'}" target="_blank">
+      <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Join  Meeting</button>
+    </a>
+  </p>
+
+   <p>
     <strong>Meeting ID:</strong> ${meetingId || 'N/A'}<br/>
     <strong>Passcode:</strong> ${meetingPassword || 'N/A'}
   </p>
-        <div class="footer">
-          <p>This is an automated notification from the ATS System.</p>
-        </div>
-      </div>
-    </body>
+
+  <p>
+    Kindly join the meeting on time and ensure you have a stable internet
+    connection. Please keep your updated resume handy for reference.
+  </p>
+
+  <p>
+    If you are unable to attend at the scheduled time, kindly inform us in advance.
+  </p>
+
+  <p>We look forward to speaking with you.</p>
+
+  <br/>
+
+  <p>
+    <strong>Thanks & Regards,</strong><br/>
+    Human Resource<br/>
+    <span style="color:#C00000;">Cogniter Technologies</span><br/>
+    <a href="mailto:jsingh@cogniter.com">jsingh@cogniter.com</a> |
+    <a href="mailto:nikhilsharma@cogniter.com">nikhilsharma@cogniter.com</a> | 
+    <a href="https://www.cogniter.com" target="_blank">www.cogniter.com</a>
+  </p>
+</body>
     </html>
   `;
 
