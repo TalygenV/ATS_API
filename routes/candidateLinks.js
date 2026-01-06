@@ -901,7 +901,17 @@ router.post('/:token/book-slot', async (req, res) => {
         interviewLink : interviewLink.join_url
       });
     }
+    
 
+    const formattedDate = new Date(slot.start_time).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
     // Notify HR/Admin
     try {
       const hrAdminUsers = await query(
@@ -925,7 +935,7 @@ router.post('/:token/book-slot', async (req, res) => {
             <strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}<br>
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
             <strong>Interviewer:</strong> ${slot.interviewer_name || slot.interviewer_email}<br>
-            <strong>Interview Date & Time:</strong> ${fromUTCString(slot.start_time) ? fromUTCString(slot.start_time).toLocaleDateString('en-IN') : 'N/A'}<br>
+            <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
   </p>
 
   <p>

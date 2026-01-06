@@ -92,7 +92,7 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'Email and password are required'
       });
@@ -105,7 +105,7 @@ router.post('/login', async (req, res) => {
     );
 
     if (!user) {
-      return res.status(401).json({
+      return res.status(200).json({
         success: false,
         error: 'Invalid email or password'
       });
@@ -113,7 +113,7 @@ router.post('/login', async (req, res) => {
 
     // Check if user is active
     if (user.status !== 'active') {
-      return res.status(403).json({
+      return res.status(200).json({
         success: false,
         error: 'Your account has been deactivated. Please contact an administrator.'
       });
@@ -123,7 +123,7 @@ router.post('/login', async (req, res) => {
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
 
     if (!passwordMatch) {
-      return res.status(401).json({
+      return res.status(200).json({
         success: false,
         error: 'Invalid email or password'
       });

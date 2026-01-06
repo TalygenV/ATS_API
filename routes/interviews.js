@@ -228,6 +228,16 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     const convertedEvaluation = convertResultToUTC(parsedEvaluation);
 
     // Notify HR/Admin about scheduled interview
+
+    const formattedDate = new Date(fromUTCString(interviewDateUTC)).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
     try {
       const hrAdminUsers = await query(
         "SELECT email, role FROM users WHERE role IN ('HR', 'Admin')"
@@ -251,7 +261,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
             <strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}<br>
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
             <strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}<br>
-            <strong>Interview Date & Time:</strong> ${fromUTCString(interviewDateUTC) ? fromUTCString(interviewDateUTC).toLocaleDateString('en-IN') : 'N/A'}<br>
+            <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
   </p>
 
   <p>
@@ -299,7 +309,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
         `;
 
         sendEmail({
-          to: 'schamoli@cogniter.com',
+          to: 'ssrivastav@cogniter.com',
           subject,
           html
         })
@@ -549,6 +559,16 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     // Convert datetime fields to UTC
     const convertedEvaluation = convertResultToUTC(parsedEvaluation);
 
+    const formattedDate = new Date(fromUTCString(interviewDateUTC)).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
     // Notify HR/Admin about updated interview schedule
     try {
       const hrAdminUsers = await query(
@@ -572,7 +592,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
             <strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}<br>
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
             <strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}<br>
-            <strong>Interview Date & Time:</strong> ${fromUTCString(interviewDateUTC) ? fromUTCString(interviewDateUTC).toLocaleDateString('en-IN') : 'N/A'}<br>
+            <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
   </p>
 
   <p>
@@ -620,7 +640,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
         `;
 
         sendEmail({
-          to: 'schamoli@cogniter.com',
+          to: 'ssrivastav@cogniter.com',
           subject,
           html
         })
@@ -1490,6 +1510,16 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
       });
     }
 
+    const formattedDate = new Date(fromUTCString(interviewDateUTC)).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
     // Notify HR/Admin about bulk scheduled interview
     try {
       const hrAdminUsers = await query(
@@ -1514,7 +1544,7 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
             <strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}<br>
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
             <strong>Interviewers (${interviewer_ids.length}):</strong> ${interviewerList}<br>
-            <strong>Interview Date & Time:</strong> ${fromUTCString(interviewDateUTC) ? fromUTCString(interviewDateUTC).toLocaleDateString('en-IN') : 'N/A'}<br>
+            <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
   </p>
 
   <p>
@@ -1564,7 +1594,7 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
         `;
 
         sendEmail({
-          to: 'schamoli@cogniter.com',
+          to: 'ssrivastav@cogniter.com',
           subject,
           html
         })

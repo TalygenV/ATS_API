@@ -86,6 +86,7 @@ async function sendInterviewAssignmentToInterviewer({
 
  
   const formattedDate = new Date(interviewDate).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     weekday: 'long',
     year: 'numeric',
     month: 'long',
@@ -94,6 +95,9 @@ async function sendInterviewAssignmentToInterviewer({
     minute: '2-digit'
   });
 
+
+  
+  
   const subject = `New Interview Assignment: ${candidateName} - ${jobTitle}`;
   
   const html = `
@@ -115,7 +119,7 @@ async function sendInterviewAssignmentToInterviewer({
       <strong>Candidate Name:</strong> ${candidateName || 'N/A'}<br>
             <strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}<br>
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
-            <strong>Interview Date & Time:</strong> ${formattedDate}<br>
+            <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
   </p>
 
   <p>
@@ -192,12 +196,14 @@ async function sendInterviewAssignmentToCandidate({
   // });
 
     const formattedDate = new Date(interviewDate).toLocaleDateString('en-IN', {
+      timeZone: 'Asia/Kolkata',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   });
 
   const formattedTime = new Date(interviewDate).toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
