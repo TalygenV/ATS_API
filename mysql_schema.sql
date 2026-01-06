@@ -215,21 +215,44 @@ ADD COLUMN `hr_remarks` VARCHAR(100) NULL DEFAULT NULL AFTER `hr_final_reason`;
 
 
 
-
-CREATE TABLE `ats_system_local`.`interview_details` (
-  `id` INT NOT NULL AUTO_INCREMENT,
+-----------------------------------------------------------------------------------------------
+----------------------------------Interview Details Table-------------------------------------
+CREATE TABLE  `interview_details` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
   `candidate_evaluations_id` INT NOT NULL,
   `interviewer_time_slots_id` INT NULL,
-  `interviewer_id` VARCHAR(36) NULL,
+  `interviewer_id` VARCHAR(36) NULL DEFAULT NULL,
   `interviewer_feedback` JSON NULL,
   `interviewer_status` ENUM('pending', 'selected', 'rejected', 'on_hold') NULL DEFAULT 'pending',
   `interviewer_hold_reason` TEXT NULL DEFAULT NULL,
-  PRIMARY KEY (`id`));
+  PRIMARY KEY (`id`)) ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
+COLLATE=utf8mb4_unicode_ci;
 
 
-  ALTER TABLE `ats_system_local`.`candidate_evaluations` 
+
+insert into interview_details (
+  candidate_evaluations_id,
+  interviewer_time_slots_id,
+  interviewer_id,
+  interviewer_feedback,
+  interviewer_status,
+  interviewer_hold_reason
+)
+ (select 
+ id as candidate_evaluations_id ,
+ (select id from interviewer_time_slots it where it.interviewer_id = ce.interviewer_id and it.is_booked=1 and it.start_time=ce.interview_date ) as interviewer_time_slots_id ,
+ interviewer_id ,
+ interviewer_feedback , 
+ interviewer_status, 
+ interviewer_hold_reason   
+from candidate_evaluations ce where ce.interviewer_id is not null)
+
+
+
+  ALTER TABLE  `candidate_evaluations` 
 DROP FOREIGN KEY `candidate_evaluations_ibfk_3`;
-ALTER TABLE `ats_system_local`.`candidate_evaluations` 
+ALTER TABLE  `candidate_evaluations` 
 DROP COLUMN `interviewer_hold_reason`,
 DROP COLUMN `interviewer_status`,
 DROP COLUMN `interviewer_feedback`,
@@ -240,14 +263,6 @@ DROP INDEX `idx_interviewer_status` ,
 DROP INDEX `idx_interviewer_id` ;
 ;
 
-ALTER TABLE `ats_system_local`.`interview_details` 
-CHANGE COLUMN `id` `id` BIGINT NOT NULL ;
-
-ALTER TABLE `ats_system_local`.`interview_details` 
-CHANGE COLUMN `interviewer_id` `interviewer_id` VARCHAR(36) NULL DEFAULT NULL ;
-
-ALTER TABLE `ats_system_local`.`interview_details` 
-CHANGE COLUMN `id` `id` BIGINT NOT NULL AUTO_INCREMENT ;
 
 
 -- SMTP Setting Table ---------05/01/2026--------------------Samson-------------
