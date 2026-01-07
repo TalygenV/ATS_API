@@ -221,10 +221,24 @@ router.get('/:id/versions', authenticate, async (req, res) => {
     const { id } = req.params;
 
     // First, get the resume to find the original
-    const resume = await queryOne(
-      'SELECT id, parent_id, email, name FROM resumes WHERE id = ?',
+
+    // `SELECT id, parent_id, email, name FROM resumes WHERE id = ?  `
+    const resume = await queryOne(`  SELECT 
+  r.id,
+  r.parent_id,
+  r.email,
+  r.name,
+  jd.title         
+FROM resumes r
+INNER JOIN candidate_evaluations ce
+  ON r.id = ce.resume_id
+INNER JOIN job_descriptions jd
+  ON jd.id = ce.job_description_id
+WHERE r.id = ?`,
       [id]
     );
+
+  
 
     if (!resume) {
       return res.status(404).json({ 
@@ -293,6 +307,7 @@ router.get('/:id/versions', authenticate, async (req, res) => {
       original_resume_id: originalResumeId,
       total_versions: convertedVersions.length,
       data: convertedVersions.map(v => ({
+        title: resume.title,
         version: v.version_number,
         uploaded_on: v.created_at,
         resume_id: v.id,
