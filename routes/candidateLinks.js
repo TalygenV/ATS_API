@@ -96,7 +96,7 @@ router.post('/generate', async (req, res) => {
 
     // Check if job status is 'On Hold' - prevent link generation
     if (job.status === 'On Hold') {
-      return res.status(403).json({
+      return res.status(200).json({
         success: false,
         error: 'Cannot generate candidate link. Job description is currently On Hold.'
       });
@@ -815,7 +815,7 @@ router.post('/:token/book-slot', async (req, res) => {
 
     // Check if job status is 'On Hold' - prevent slot booking
     if (evaluation.job_status === 'On Hold') {
-      return res.status(403).json({
+      return res.status(200).json({
         success: false,
         error: 'Cannot book interview slot. Job description is currently On Hold.'
       });

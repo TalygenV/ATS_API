@@ -379,7 +379,7 @@ router.get('/:id', authenticate, async (req, res) => {
     );
 
     if (!evaluation) {
-      return res.status(404).json({ error: 'Evaluation not found' });
+      return res.status(200).json({ error: 'Evaluation not found' });
     }
 
     // Visibility check: Interviewers can only see their assigned candidates
@@ -389,7 +389,7 @@ router.get('/:id', authenticate, async (req, res) => {
         [evaluation.id, req.user.id]
       );
       if (!hasAccess) {
-        return res.status(403).json({
+        return res.status(200).json({
           success: false,
           error: 'Access denied. This candidate is not assigned to you.'
         });
@@ -542,7 +542,7 @@ router.post('/:id/interviewer-feedback', authenticate, authorize('Interviewer'),
     );
 
     if (!interviewDetail) {
-      return res.status(403).json({
+      return res.status(200).json({
         success: false,
         error: 'This candidate is not assigned to you'
       });
@@ -886,7 +886,7 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
     ) AS resume
 
   FROM candidate_evaluations ce
-RIGHT JOIN resumes r ON ce.resume_id = r.id
+LEFT JOIN resumes r ON ce.resume_id = r.id
 Left JOIN interview_details id ON id.candidate_evaluations_id = ce.id
   WHERE ce.job_description_id = ?
 `;
@@ -1396,7 +1396,7 @@ router.get('/:id/timeline', authenticate, async (req, res) => {
         [evaluation.id, req.user.id]
       );
       if (!hasAccess) {
-        return res.status(403).json({
+        return res.status(200).json({
           success: false,
           error: 'Access denied. This candidate is not assigned to you.'
         });

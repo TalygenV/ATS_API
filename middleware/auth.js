@@ -43,7 +43,7 @@ const authenticate = async (req, res, next) => {
 
     // Check if user is active
     if (userData.status !== 'active') {
-      return res.status(403).json({
+      return res.status(200).json({
         success: false,
         error: 'Your account has been deactivated. Please contact an administrator.'
       });
@@ -73,7 +73,7 @@ const authorize = (...allowedRoles) => {
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({
+      return res.status(200).json({
         success: false,
         error: 'Insufficient permissions. Required role: ' + allowedRoles.join(' or ')
       });
@@ -93,7 +93,7 @@ const requireWriteAccess = (req, res, next) => {
   }
 
   if (!['HR', 'Admin'].includes(req.user.role)) {
-    return res.status(403).json({
+    return res.status(200).json({
       success: false,
       error: 'Write access denied. Only HR and Admin can perform this action.'
     });
@@ -112,7 +112,7 @@ const requireAdmin = (req, res, next) => {
   }
 
   if (req.user.role !== 'Admin') {
-    return res.status(403).json({
+    return res.status(200).json({
       success: false,
       error: 'Admin access required'
     });
