@@ -209,7 +209,7 @@ router.get('/', authenticate, async (req, res) => {
     const params = [];
     const interviewTimeSlot = process.env.INTERVIEW_TIME_SLOT;
     const isInterviewer = req.user.role === 'Interviewer';
-
+    const joinCondition = isInterviewer ? 'INNER' : 'LEFT';
     /*
       If interviewer:
       1️⃣ ce JOIN → interviewer-specific candidates
@@ -250,7 +250,7 @@ SELECT
   /* Accepted */
   COUNT(DISTINCT CASE 
     WHEN ce.id IS NOT NULL
-     AND lr.id IS NOT NULL
+     
      AND ce.status = 'accepted'
     THEN ce.email END
   ) AS accepted,
@@ -258,7 +258,7 @@ SELECT
   /* Pending */
   COUNT(DISTINCT CASE 
     WHEN ce.id IS NOT NULL
-     AND lr.id IS NOT NULL
+     
      AND ce.status = 'pending'
     THEN ce.email END
   ) AS pending,
@@ -266,7 +266,6 @@ SELECT
   /* Rejected */
   COUNT(DISTINCT CASE 
     WHEN ce.id IS NOT NULL
-     AND lr.id IS NOT NULL
      AND ce.status = 'rejected'
     THEN ce.email END
   ) AS rejected,
@@ -328,17 +327,17 @@ SELECT
   ) AS scheduledInterview , 
    COUNT(DISTINCT CASE 
     WHEN ce.id IS NOT NULL
-     AND lr.id IS NOT NULL
+   
      AND its.start_time IS  NULL
     THEN ce.email END
   )
   AS totalPending
 
 FROM job_descriptions jd
-LEFT JOIN candidate_evaluations ce
+RIGHT JOIN candidate_evaluations ce
   ON ce.job_description_id = jd.id
 
-LEFT JOIN interview_details id
+${joinCondition} JOIN interview_details id
   ON id.candidate_evaluations_id = ce.id
   ${interviewerJoin}
 LEFT JOIN interviewer_time_slots its

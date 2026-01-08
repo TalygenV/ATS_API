@@ -886,7 +886,7 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
     ) AS resume
 
   FROM candidate_evaluations ce
-Left JOIN resumes r ON ce.resume_id = r.id
+RIGHT JOIN resumes r ON ce.resume_id = r.id
 Left JOIN interview_details id ON id.candidate_evaluations_id = ce.id
   WHERE ce.job_description_id = ?
 `;
