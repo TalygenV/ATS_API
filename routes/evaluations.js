@@ -1529,13 +1529,14 @@ from candidate_evaluations ce
         timeline.push({
           type: 'interview_scheduled',
           title: 'Interview Scheduled',
-          description: `Interview scheduled with ${interviewer?.full_name || interviewer?.email || 'Interviewer'} for ${fromUTCString(interviewDate) ? fromUTCString(interviewDate).toLocaleString('en-US', {
+          description: `Interview scheduled with ${interviewer?.full_name || interviewer?.email || 'Interviewer'} for ${fromUTCString(interviewDate) ? fromUTCString(interviewDate).toLocaleString('en-IN', {
+            timeZone:'Asia/Kolkata',
             year: 'numeric',
             month: 'long',
             day: 'numeric',
             hour: '2-digit',
             minute: '2-digit'
-          }) : 'N/A'}`,
+          } ) : 'N/A'} (IST)`,
           timestamp: interviewDate,
           user: null,
           details: {
