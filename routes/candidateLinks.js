@@ -94,6 +94,14 @@ router.post('/generate', async (req, res) => {
       });
     }
 
+    // Check if job status is 'On Hold' - prevent link generation
+    if (job.status === 'On Hold') {
+      return res.status(403).json({
+        success: false,
+        error: 'Cannot generate candidate link. Job description is currently On Hold.'
+      });
+    }
+
     // Check if a link already exists for this job post (one link per job post)
     const existingLink = await queryOne(
       'SELECT * FROM candidate_links WHERE job_description_id = ? AND status != "expired" ORDER BY created_at DESC LIMIT 1',
@@ -259,7 +267,7 @@ router.get('/job/:job_description_id', async (req, res) => {
 
     const link = await queryOne(
       `SELECT cl.*, 
-        JSON_OBJECT('id', jd.id, 'title', jd.title, 'description', jd.description, 'requirements', jd.requirements) as job
+        JSON_OBJECT('id', jd.id, 'title', jd.title, 'description', jd.description, 'requirements', jd.requirements, 'status', jd.status) as job
        FROM candidate_links cl
        LEFT JOIN job_descriptions jd ON cl.job_description_id = jd.id
        WHERE cl.job_description_id = ? AND cl.status != 'expired'
@@ -348,7 +356,7 @@ router.get('/:token', async (req, res) => {
 
     const link = await queryOne(
       `SELECT cl.*, 
-        JSON_OBJECT('id', jd.id, 'title', jd.title, 'description', jd.description, 'requirements', jd.requirements) as job
+        JSON_OBJECT('id', jd.id, 'title', jd.title, 'description', jd.description, 'requirements', jd.requirements, 'status', jd.status) as job
        FROM candidate_links cl
        LEFT JOIN job_descriptions jd ON cl.job_description_id = jd.id
        WHERE cl.token = ?`,
@@ -366,6 +374,15 @@ router.get('/:token', async (req, res) => {
       return res.status(410).json({
         success: false,
         error: 'This link has expired'
+      });
+    }
+
+    // Check if job status is 'On Hold' - prevent access to link
+    const job = link.job ? JSON.parse(link.job) : null;
+    if (job && job.status === 'On Hold') {
+      return res.status(403).json({
+        success: false,
+        error: 'This job posting is currently On Hold. Applications are not being accepted at this time.'
       });
     }
 
@@ -410,7 +427,8 @@ router.get('/:token', async (req, res) => {
         questions = [];
       }
     }
-    const job = link.job ? JSON.parse(link.job) : null;
+    // job was already parsed above for status check
+    // const job = link.job ? JSON.parse(link.job) : null;
 
     const linkData = {
       id: link.id,
@@ -418,7 +436,7 @@ router.get('/:token', async (req, res) => {
       status: link.status,
       candidate_name: link.candidate_name,
       candidate_email: link.candidate_email,
-      job,
+      job: job, // job was already parsed above
       questions
     };
 
@@ -495,6 +513,22 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
       return res.status(200).json({
         success: false,
         error: 'Job description not found'
+      });
+    }
+
+    // Check if job status is 'On Hold' - prevent submission
+    if (job.status === 'On Hold') {
+      // Clean up file before returning error
+      try {
+        if (filePath) {
+          await fs.unlink(filePath);
+        }
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      return res.status(200).json({
+        success: false,
+        error: 'Cannot submit application. Job description is currently On Hold.'
       });
     }
 
@@ -762,6 +796,7 @@ router.post('/:token/book-slot', async (req, res) => {
       `SELECT ce.*, 
         jd.title as job_title,
         jd.interviewers,
+        jd.status as job_status,
         r.name as candidate_name,
         r.email as candidate_email
        FROM candidate_evaluations ce
@@ -775,6 +810,14 @@ router.post('/:token/book-slot', async (req, res) => {
       return res.status(404).json({
         success: false,
         error: 'Evaluation not found or does not belong to this job post'
+      });
+    }
+
+    // Check if job status is 'On Hold' - prevent slot booking
+    if (evaluation.job_status === 'On Hold') {
+      return res.status(403).json({
+        success: false,
+        error: 'Cannot book interview slot. Job description is currently On Hold.'
       });
     }
 

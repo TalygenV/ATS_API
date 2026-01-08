@@ -422,13 +422,17 @@ router.get('/:id', authenticate, async (req, res) => {
 // Create new job description (only HR and Admin can create)
 router.post('/', authenticate, requireWriteAccess, async (req, res) => {
   try {
-    const { title, description, requirements, interviewers } = req.body;
+    const { title, description, requirements, interviewers, status } = req.body;
 
     if (!title || !description) {
       return res.status(400).json({
         error: 'Title and description are required'
       });
     }
+
+    // Validate status if provided
+    const validStatuses = ['Open', 'On Hold'];
+    const jobStatus = status && validStatuses.includes(status) ? status : 'Open';
 
     // Validate interviewers if provided
     let interviewersJson = null;
@@ -455,8 +459,8 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
     }
 
     const result = await query(
-      'INSERT INTO job_descriptions (title, description, requirements, interviewers) VALUES (?, ?, ?, ?)',
-      [title.trim(), description.trim(), requirements ? requirements.trim() : null, interviewersJson]
+      'INSERT INTO job_descriptions (title, description, requirements, interviewers, status) VALUES (?, ?, ?, ?, ?)',
+      [title.trim(), description.trim(), requirements ? requirements.trim() : null, interviewersJson, jobStatus]
     );
 
     const jobDescription = await queryOne(
@@ -488,12 +492,22 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
 router.put('/:id', authenticate, requireWriteAccess, async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, requirements, interviewers } = req.body;
+    const { title, description, requirements, interviewers, status } = req.body;
 
     if (!title || !description) {
       return res.status(400).json({
         error: 'Title and description are required'
       });
+    }
+
+    // Validate status if provided
+    if (status !== undefined) {
+      const validStatuses = ['Open', 'On Hold'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          error: 'Status must be either "Open" or "On Hold"'
+        });
+      }
     }
 
     // Validate interviewers if provided
@@ -532,6 +546,11 @@ router.put('/:id', authenticate, requireWriteAccess, async (req, res) => {
     if (interviewers !== undefined) {
       updateFields.push('interviewers = ?');
       updateValues.push(interviewersJson);
+    }
+
+    if (status !== undefined) {
+      updateFields.push('status = ?');
+      updateValues.push(status);
     }
 
     updateValues.push(id);

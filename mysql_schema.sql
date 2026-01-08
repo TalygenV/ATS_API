@@ -316,3 +316,14 @@ CREATE TABLE AI_Settings (
 ) ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
+
+
+----------------------------------------------------------------------------------
+-- 08/01/2026--------------------Samson-------------
+ALTER TABLE `job_descriptions` 
+ADD COLUMN `status` ENUM('Open', 'On Hold') DEFAULT 'Open' AFTER `requirements`,
+ADD INDEX `idx_status` (`status`);
+
+UPDATE `job_descriptions` SET `status` = 'Open' WHERE `status` IS NULL;
+
+----------------------------------------------------------------------
