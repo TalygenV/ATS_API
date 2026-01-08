@@ -821,7 +821,7 @@ router.post('/:id/hr-decision', authenticate, requireWriteAccess, async (req, re
 router.get('/job/:job_description_id', authenticate, async (req, res) => {
   try {
     const { job_description_id } = req.params;
-    const { status, sort_by } = req.query;
+    const { interviewer_status, status, sort_by } = req.query;
 
 //     let sql = `
 //       SELECT 
@@ -887,6 +887,7 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
 
   FROM candidate_evaluations ce
 Left JOIN resumes r ON ce.resume_id = r.id
+Left JOIN interview_details id ON id.candidate_evaluations_id = ce.id
   WHERE ce.job_description_id = ?
 `;
 
@@ -909,21 +910,21 @@ if (req.user.role === 'Interviewer') {
 
     
     // Status filtering - check all status fields
-    // if (status) {
-    //   if (status === 'selected') {
-    //     sql += ' AND (ce.interviewer_status = ? OR ce.hr_final_status = ?)';
-    //     params.push('selected', 'selected');
-    //   } else if (status === 'rejected') {
-    //     sql += ' AND (ce.interviewer_status = ? OR ce.hr_final_status = ?)';
-    //     params.push('rejected', 'rejected');
-    //   } else if (status === 'on_hold') {
-    //     sql += ' AND (ce.interviewer_status = ? OR ce.hr_final_status = ?)';
-    //     params.push('on_hold', 'on_hold');
-    //   } else {
-    //     sql += ' AND (ce.status = ? OR ce.interviewer_status = ? OR ce.hr_final_status = ?)';
-    //     params.push(status, status, status);
-    //   }
-    // }
+    if (interviewer_status) {
+      if (interviewer_status === 'selected') {
+        sql += ' AND (id.interviewer_status = ? OR ce.hr_final_status = ?)';
+        params.push('selected', 'selected');
+      } else if (interviewer_status === 'rejected') {
+        sql += ' AND (id.interviewer_status = ? OR ce.hr_final_status = ?)';
+        params.push('rejected', 'rejected');
+      } else if (interviewer_status === 'on_hold') {
+        sql += ' AND (id.interviewer_status = ? OR ce.hr_final_status = ?)';
+        params.push('on_hold', 'on_hold');
+      } else {
+        sql += ' AND (ce.status = ? OR id.interviewer_status = ? OR ce.hr_final_status = ?)';
+        params.push(interviewer_status, interviewer_status, interviewer_status);
+      }
+    }
 
         if (status) {
    

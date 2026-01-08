@@ -380,7 +380,7 @@ router.get('/:token', async (req, res) => {
     // Check if job status is 'On Hold' - prevent access to link
     const job = link.job ? JSON.parse(link.job) : null;
     if (job && job.status === 'On Hold') {
-      return res.status(403).json({
+      return res.status(200).json({
         success: false,
         error: 'This job posting is currently On Hold. Applications are not being accepted at this time.'
       });
