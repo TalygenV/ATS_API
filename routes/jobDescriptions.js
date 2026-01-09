@@ -335,7 +335,7 @@ SELECT
   AS totalPending
 
 FROM job_descriptions jd
-RIGHT JOIN candidate_evaluations ce
+LEFT JOIN candidate_evaluations ce
   ON ce.job_description_id = jd.id
 
 ${joinCondition} JOIN interview_details id
