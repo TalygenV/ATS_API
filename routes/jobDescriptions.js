@@ -204,184 +204,184 @@ const router = express.Router();
 // });
 
 
-router.get('/', authenticate, async (req, res) => {
-  try {
-    const params = [];
-    const interviewTimeSlot = process.env.INTERVIEW_TIME_SLOT;
-    const isInterviewer = req.user.role === 'Interviewer';
-    const joinCondition = isInterviewer ? 'INNER' : 'LEFT';
-    /*
-      If interviewer:
-      1. ce JOIN → interviewer-specific candidates
-      2. WHERE → job assigned to interviewer
-    */
-    const interviewerJoin = isInterviewer
-      ? ' AND id.interviewer_id = ?'
-      : '';
+// router.get('/', authenticate, async (req, res) => {
+//   try {
+//     const params = [];
+//     const interviewTimeSlot = process.env.INTERVIEW_TIME_SLOT;
+//     const isInterviewer = req.user.role === 'Interviewer';
+//     const joinCondition = isInterviewer ? 'INNER' : 'LEFT';
+//     /*
+//       If interviewer:
+//       1. ce JOIN → interviewer-specific candidates
+//       2. WHERE → job assigned to interviewer
+//     */
+//     const interviewerJoin = isInterviewer
+//       ? ' AND id.interviewer_id = ?'
+//       : '';
 
-    if (isInterviewer) {
-      // JOIN filter
-      params.push(req.user.id);
-      // WHERE JSON_CONTAINS
-      params.push(req.user.id);
-    }
+//     if (isInterviewer) {
+//       // JOIN filter
+//       params.push(req.user.id);
+//       // WHERE JSON_CONTAINS
+//       params.push(req.user.id);
+//     }
 
-    const sql = `
-WITH latest_resumes AS (
-  SELECT r1.id
-  FROM resumes r1
-  JOIN (
-    SELECT 
-      COALESCE(parent_id, id) AS root_id,
-      MAX(version_number) AS max_version
-    FROM resumes
-    GROUP BY COALESCE(parent_id, id)
-  ) x
-    ON x.root_id = COALESCE(r1.parent_id, r1.id)
-   AND x.max_version = r1.version_number
-)
+//     const sql = `
+// WITH latest_resumes AS (
+//   SELECT r1.id
+//   FROM resumes r1
+//   JOIN (
+//     SELECT 
+//       COALESCE(parent_id, id) AS root_id,
+//       MAX(version_number) AS max_version
+//     FROM resumes
+//     GROUP BY COALESCE(parent_id, id)
+//   ) x
+//     ON x.root_id = COALESCE(r1.parent_id, r1.id)
+//    AND x.max_version = r1.version_number
+// )
 
-SELECT 
-  jd.*,
+// SELECT 
+//   jd.*,
 
-  /* Total resumes (interviewer-specific if interviewer) */
-  COUNT(DISTINCT lr.id) AS resume_count,
+//   /* Total resumes (interviewer-specific if interviewer) */
+//   COUNT(DISTINCT lr.id) AS resume_count,
 
-  /* Accepted */
-  COUNT(DISTINCT CASE 
-    WHEN ce.id IS NOT NULL
+//   /* Accepted */
+//   COUNT(DISTINCT CASE 
+//     WHEN ce.id IS NOT NULL
      
-     AND ce.status = 'accepted'
-    THEN ce.email END
-  ) AS accepted,
+//      AND ce.status = 'accepted'
+//     THEN ce.email END
+//   ) AS accepted,
 
-  /* Pending */
-  COUNT(DISTINCT CASE 
-    WHEN ce.id IS NOT NULL
+//   /* Pending */
+//   COUNT(DISTINCT CASE 
+//     WHEN ce.id IS NOT NULL
      
-     AND ce.status = 'pending'
-    THEN ce.email END
-  ) AS pending,
+//      AND ce.status = 'pending'
+//     THEN ce.email END
+//   ) AS pending,
 
-  /* Rejected */
-  COUNT(DISTINCT CASE 
-    WHEN ce.id IS NOT NULL
-     AND ce.status = 'rejected'
-    THEN ce.email END
-  ) AS rejected,
+//   /* Rejected */
+//   COUNT(DISTINCT CASE 
+//     WHEN ce.id IS NOT NULL
+//      AND ce.status = 'rejected'
+//     THEN ce.email END
+//   ) AS rejected,
 
-  /* On Hold */
-  COUNT(DISTINCT CASE 
-    WHEN ce.id IS NOT NULL
-     AND lr.id IS NOT NULL
-     AND (
-          -- id.interviewer_status IN ('on_hold','rejected')
-         -- OR 
-          ce.hr_final_status = 'on_hold'
-         )
-     -- AND ce.hr_final_status NOT IN ('selected','rejected')
-    THEN ce.email END
-  ) AS onhold,
+//   /* On Hold */
+//   COUNT(DISTINCT CASE 
+//     WHEN ce.id IS NOT NULL
+//      AND lr.id IS NOT NULL
+//      AND (
+//           -- id.interviewer_status IN ('on_hold','rejected')
+//          -- OR 
+//           ce.hr_final_status = 'on_hold'
+//          )
+//      -- AND ce.hr_final_status NOT IN ('selected','rejected')
+//     THEN ce.email END
+//   ) AS onhold,
 
-  /* Final Rejected */
-  COUNT(DISTINCT CASE 
-    WHEN ce.id IS NOT NULL
-     AND lr.id IS NOT NULL
-     AND ce.hr_final_status = 'rejected'
-    THEN ce.email END
-  ) AS finalRejected,
+//   /* Final Rejected */
+//   COUNT(DISTINCT CASE 
+//     WHEN ce.id IS NOT NULL
+//      AND lr.id IS NOT NULL
+//      AND ce.hr_final_status = 'rejected'
+//     THEN ce.email END
+//   ) AS finalRejected,
 
-  /* Final Selected */
-  COUNT(DISTINCT CASE 
-    WHEN ce.id IS NOT NULL
-     AND lr.id IS NOT NULL
-     AND ce.hr_final_status = 'selected'
-    THEN ce.email END
-  ) AS finalSelected,
+//   /* Final Selected */
+//   COUNT(DISTINCT CASE 
+//     WHEN ce.id IS NOT NULL
+//      AND lr.id IS NOT NULL
+//      AND ce.hr_final_status = 'selected'
+//     THEN ce.email END
+//   ) AS finalSelected,
 
-  /* Decision Pending */
-  COUNT(DISTINCT CASE 
-    WHEN ce.id IS NOT NULL
-     AND lr.id IS NOT NULL
-     AND ce.hr_final_status = 'pending'
-     AND (
-      -- id.interviewer_status = 'selected'
-       -- OR (
-         its.start_time IS NOT NULL
-         -- AND id.interviewer_feedback IS  NULL
-         AND UTC_TIMESTAMP() >
-             DATE_ADD(its.start_time, INTERVAL ${interviewTimeSlot} MINUTE)
-      -- )
-     )
-    THEN ce.email END
-  ) AS totalDecisionPending,
+//   /* Decision Pending */
+//   COUNT(DISTINCT CASE 
+//     WHEN ce.id IS NOT NULL
+//      AND lr.id IS NOT NULL
+//      AND ce.hr_final_status = 'pending'
+//      AND (
+//       -- id.interviewer_status = 'selected'
+//        -- OR (
+//          its.start_time IS NOT NULL
+//          -- AND id.interviewer_feedback IS  NULL
+//          AND UTC_TIMESTAMP() >
+//              DATE_ADD(its.start_time, INTERVAL ${interviewTimeSlot} MINUTE)
+//       -- )
+//      )
+//     THEN ce.email END
+//   ) AS totalDecisionPending,
 
-  /* Scheduled Interview */
-  COUNT(DISTINCT CASE 
-    WHEN ce.id IS NOT NULL
-     AND lr.id IS NOT NULL
-     AND its.start_time IS NOT NULL
-     AND id.interviewer_feedback IS NULL
-     AND its.start_time > UTC_TIMESTAMP()
-     AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
-    THEN ce.email END
-  ) AS scheduledInterview , 
-   COUNT(DISTINCT CASE 
-    WHEN ce.id IS NOT NULL
+//   /* Scheduled Interview */
+//   COUNT(DISTINCT CASE 
+//     WHEN ce.id IS NOT NULL
+//      AND lr.id IS NOT NULL
+//      AND its.start_time IS NOT NULL
+//      AND id.interviewer_feedback IS NULL
+//      AND its.start_time > UTC_TIMESTAMP()
+//      AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
+//     THEN ce.email END
+//   ) AS scheduledInterview , 
+//    COUNT(DISTINCT CASE 
+//     WHEN ce.id IS NOT NULL
    
-     AND its.start_time IS  NULL
-    THEN ce.email END
-  )
-  AS totalPending
+//      AND its.start_time IS  NULL
+//     THEN ce.email END
+//   )
+//   AS totalPending
 
-FROM job_descriptions jd
-LEFT JOIN candidate_evaluations ce
-  ON ce.job_description_id = jd.id
+// FROM job_descriptions jd
+// LEFT JOIN candidate_evaluations ce
+//   ON ce.job_description_id = jd.id
 
-${joinCondition} JOIN interview_details id
-  ON id.candidate_evaluations_id = ce.id
-  ${interviewerJoin}
-LEFT JOIN interviewer_time_slots its
-  ON its.id = id.interviewer_time_slots_id
+// ${joinCondition} JOIN interview_details id
+//   ON id.candidate_evaluations_id = ce.id
+//   ${interviewerJoin}
+// LEFT JOIN interviewer_time_slots its
+//   ON its.id = id.interviewer_time_slots_id
 
-LEFT JOIN latest_resumes lr
-  ON lr.id = ce.resume_id
+// LEFT JOIN latest_resumes lr
+//   ON lr.id = ce.resume_id
 
-WHERE
-  ${isInterviewer ? `
-    JSON_CONTAINS(
-      jd.interviewers,
-      JSON_QUOTE(?)
-    )
-  ` : '1=1'}
+// WHERE
+//   ${isInterviewer ? `
+//     JSON_CONTAINS(
+//       jd.interviewers,
+//       JSON_QUOTE(?)
+//     )
+//   ` : '1=1'}
 
-GROUP BY jd.id
-ORDER BY jd.created_at DESC
-`;
+// GROUP BY jd.id
+// ORDER BY jd.created_at DESC
+// `;
 
-    const rows = await query(sql, params);
+//     const rows = await query(sql, params);
 
-    const parsedJobDescriptions = rows.map(jd => ({
-      ...jd,
-      interviewers: jd.interviewers ? JSON.parse(jd.interviewers) : [],
-      resume_count: Number(jd.resume_count) || 0
-    }));
+//     const parsedJobDescriptions = rows.map(jd => ({
+//       ...jd,
+//       interviewers: jd.interviewers ? JSON.parse(jd.interviewers) : [],
+//       resume_count: Number(jd.resume_count) || 0
+//     }));
 
-    res.json({
-      success: true,
-      count: parsedJobDescriptions.length,
-      data: parsedJobDescriptions
-    });
+//     res.json({
+//       success: true,
+//       count: parsedJobDescriptions.length,
+//       data: parsedJobDescriptions
+//     });
 
-  } catch (error) {
-    console.error('Error fetching job descriptions:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch job descriptions',
-      error: error.message
-    });
-  }
-});
+//   } catch (error) {
+//     console.error('Error fetching job descriptions:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch job descriptions',
+//       error: error.message
+//     });
+//   }
+// });
 
 router.get('/', authenticate, async (req, res) => {
   try {
