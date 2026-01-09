@@ -275,10 +275,11 @@ SELECT
     WHEN ce.id IS NOT NULL
      AND lr.id IS NOT NULL
      AND (
-          id.interviewer_status IN ('on_hold','rejected')
-          OR ce.hr_final_status = 'on_hold'
+          -- id.interviewer_status IN ('on_hold','rejected')
+         -- OR 
+          ce.hr_final_status = 'on_hold'
          )
-     AND ce.hr_final_status NOT IN ('selected','rejected')
+     -- AND ce.hr_final_status NOT IN ('selected','rejected')
     THEN ce.email END
   ) AS onhold,
 
@@ -302,15 +303,15 @@ SELECT
   COUNT(DISTINCT CASE 
     WHEN ce.id IS NOT NULL
      AND lr.id IS NOT NULL
-     AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
+     AND ce.hr_final_status = 'pending'
      AND (
-       id.interviewer_status = 'selected'
-       OR (
+      -- id.interviewer_status = 'selected'
+       -- OR (
          its.start_time IS NOT NULL
-         AND id.interviewer_feedback IS NULL
+         -- AND id.interviewer_feedback IS  NULL
          AND UTC_TIMESTAMP() >
              DATE_ADD(its.start_time, INTERVAL ${interviewTimeSlot} MINUTE)
-       )
+      -- )
      )
     THEN ce.email END
   ) AS totalDecisionPending,
