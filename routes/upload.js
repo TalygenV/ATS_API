@@ -23,7 +23,7 @@ const uploadToTalygen = async (filePath, fileName, mimetype, resumeId = null) =>
     const apiUrl = process.env.TALYGEN_API_URL || 'https://appfilemedia.talygen.com/api/UploadStreamNew';
 
     if (!apiToken) {
-      console.warn('⚠️  Talygen API token not configured, skipping Talygen upload');
+      console.warn('   Talygen API token not configured, skipping Talygen upload');
       return null;
     }
 
@@ -32,7 +32,6 @@ const uploadToTalygen = async (filePath, fileName, mimetype, resumeId = null) =>
 
     // Log token status (first 4 chars only for debugging)
     const tokenPreview = apiToken.length > 4 ? apiToken.substring(0, 4) + '...' : '***';
-    console.log(`📤 Uploading file to Talygen API: ${fileName} (Token: ${tokenPreview}, Length: ${apiToken.length})${resumeId ? ` [Resume ID: ${resumeId}]` : ''}`);
 
     // Create form data
     const formData = new FormData();
@@ -55,8 +54,6 @@ const uploadToTalygen = async (filePath, fileName, mimetype, resumeId = null) =>
       maxContentLength: Infinity,
       maxBodyLength: Infinity
     });
-
-    console.log(`✅ File uploaded successfully to Talygen API`);
 
     const apiResponse = response.data;
 
@@ -82,15 +79,13 @@ const uploadToTalygen = async (filePath, fileName, mimetype, resumeId = null) =>
       ]
     );
 
-    console.log(`✅ Talygen upload response saved to database (ID: ${result.insertId}${resumeId ? `, linked to Resume ID: ${resumeId}` : ''})`);
-
     return {
       fileUploadId: result.insertId,
       filePath: apiResponse.FilePath,
       apiResponse: apiResponse
     };
   } catch (error) {
-    console.error(`⚠️  Error uploading to Talygen API:`, error.message);
+    console.error(`   Error uploading to Talygen API:`, error.message);
     if (error.response) {
       console.error('API Response Status:', error.response.status);
       console.error('API Response Data:', error.response.data);
@@ -98,7 +93,7 @@ const uploadToTalygen = async (filePath, fileName, mimetype, resumeId = null) =>
       
       // If 401, provide helpful message
       if (error.response.status === 401) {
-        console.error('❌ Authentication failed. Please check:');
+        console.error('  Authentication failed. Please check:');
         console.error('   1. TALYGEN_API_TOKEN is set in your .env file');
         console.error('   2. The token is correct and not expired');
         console.error('   3. The token format matches what the API expects');
@@ -236,7 +231,7 @@ const processResumeFile = async (file, jobData) => {
   try {
     resumeText = await extractTextFromFile(filePath, mimetype);
   } catch (extractError) {
-    console.error(`❌ Error extracting text from file ${fileName}:`, extractError.message);
+    console.error(`  Error extracting text from file ${fileName}:`, extractError.message);
     // Clean up file before throwing error
     try {
       await fsPromises.unlink(filePath);
@@ -248,7 +243,7 @@ const processResumeFile = async (file, jobData) => {
 
   // Validate that text was extracted successfully
   if (!resumeText || typeof resumeText !== 'string' || resumeText.trim().length === 0) {
-    console.error(`❌ No text extracted from file ${fileName}. File may be empty, corrupted, or contain only images.`);
+    console.error(`  No text extracted from file ${fileName}. File may be empty, corrupted, or contain only images.`);
     // Clean up file before throwing error
     try {
       await fsPromises.unlink(filePath);
@@ -257,8 +252,6 @@ const processResumeFile = async (file, jobData) => {
     }
     throw new Error(`No text could be extracted from the file "${fileName}". The file may be empty, corrupted, contain only images, or be in an unsupported format.`);
   }
-
-  console.log(`📄 Extracted ${resumeText.length} characters from ${fileName}`);
 
   // Parse resume with Gemini
   const parsedData = await parseResumeWithGemini(resumeText, fileName);
@@ -303,13 +296,11 @@ const processResumeFile = async (file, jobData) => {
     // This is a duplicate - create a new version
     parentId = originalResumeId;
     versionNumber = await getNextVersionNumber(originalResumeId);
-    console.log(`📝 Duplicate detected! Creating version ${versionNumber} for candidate (Original ID: ${originalResumeId})`);
   }
 
   // Ensure we preserve the original filename with extension for download
   const originalFileName = fileName;
 
-  console.log(`💾 Saving resume to database...`);
   // Save to MySQL with file path and version number
   const result = await query(
     `INSERT INTO resumes (
@@ -340,14 +331,13 @@ const processResumeFile = async (file, jobData) => {
     'SELECT * FROM resumes WHERE id = ?',
     [result.insertId]
   );
-  console.log(`✅ Resume saved to database (ID: ${result.insertId})`);
 
   // Upload to Talygen API and store response (now with resume_id)
   let talygenUpload = null;
   try {
     talygenUpload = await uploadToTalygen(filePath, fileName, mimetype, result.insertId);
   } catch (talygenError) {
-    console.error(`⚠️  Talygen upload failed, continuing with resume processing:`, talygenError.message);
+    console.error(`   Talygen upload failed, continuing with resume processing:`, talygenError.message);
   }
 
   // Parse JSON fields safely
@@ -361,18 +351,14 @@ const processResumeFile = async (file, jobData) => {
 
   // Match resume with job description
   const fullJobDescription = `${jobData.title}\n\n${jobData.description}\n\n${jobData.requirements || ''}`;
-  console.log(`🎯 Matching resume with job description...`);
   const matchResults = await matchResumeWithJobDescription(
     resumeText,
     fullJobDescription,
     parsedData
   );
-
-  console.log(`📊 Match scores - Overall: ${matchResults.overall_match}%, Skills: ${matchResults.skills_match}%, Experience: ${matchResults.experience_match}%, Education: ${matchResults.education_match}%`);
   
   // Save evaluation
   let evaluationData = null;
-  console.log(`💾 Saving evaluation to database...`);
   try {
     const evalResult = await query(
       `INSERT INTO candidate_evaluations (
@@ -405,9 +391,8 @@ const processResumeFile = async (file, jobData) => {
       'SELECT * FROM candidate_evaluations WHERE id = ?',
       [evalResult.insertId]
     );
-    console.log(`✅ Evaluation saved (ID: ${evalResult.insertId})`);
   } catch (evalError) {
-    console.error(`⚠️  Error saving evaluation:`, evalError.message);
+    console.error(`   Error saving evaluation:`, evalError.message);
     // Don't fail the upload if evaluation fails, just log it
   }
 
@@ -426,9 +411,6 @@ const processResumeFile = async (file, jobData) => {
 // Single file upload (only HR and Admin can upload)
 router.post('/single', authenticate, requireWriteAccess, upload.single('resume'), handleMulterError, async (req, res) => {
   const startTime = Date.now();
-  console.log('\n========== SINGLE UPLOAD STARTED ==========');
-  console.log(`Timestamp: ${new Date().toISOString()}`);
-  console.log(`User: ${req.user.email} (${req.user.role})`);
   
   try {
     if (!req.file) {
@@ -461,8 +443,6 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
     } = await processResumeFile(req.file, jobData);
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`✅ SUCCESS - Upload completed in ${totalTime}s`);
-    console.log(`==========================================\n`);
 
     res.json({
       success: true,
@@ -493,17 +473,12 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
     if (req.file) {
       try {
         await fsPromises.unlink(req.file.path);
-        console.log(`🗑️  Cleaned up file: ${req.file.path}`);
       } catch (e) {
         // Ignore cleanup errors
       }
     }
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.error(`\n❌ UPLOAD FAILED after ${totalTime}s`);
-    console.error('Error:', error.message);
-    console.error('Stack:', error.stack);
-    console.log(`==========================================\n`);
     res.status(200).json({
       error: error.message,
    
@@ -514,20 +489,15 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
 // Multiple files upload (only HR and Admin can upload) - Maximum 5 files
 router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5), handleMulterError, async (req, res) => {
   const startTime = Date.now();
-  console.log('\n========== BULK UPLOAD STARTED ==========');
-  console.log(`Timestamp: ${new Date().toISOString()}`);
-  console.log(`User: ${req.user.email} (${req.user.role})`);
   
   try {
     if (!req.files || req.files.length === 0) {
-      console.log('❌ ERROR: No files uploaded');
       return res.status(200).json({ error: 'No files uploaded' });
     }
 
     // Enforce maximum 5 files limit for bulk upload
     const MAX_BULK_FILES = 5;
     if (req.files.length > MAX_BULK_FILES) {
-      console.log(`❌ ERROR: Too many files. Maximum ${MAX_BULK_FILES} files allowed for bulk upload. Received: ${req.files.length}`);
       // Clean up uploaded files
       for (const file of req.files) {
         try {
@@ -543,18 +513,11 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
       });
     }
 
-    console.log(`📁 Total files received: ${req.files.length}`);
-    req.files.forEach((file, index) => {
-      console.log(`   ${index + 1}. ${file.originalname} (${(file.size / 1024).toFixed(2)} KB)`);
-    });
-
     const { job_description_id } = req.body;
     if (!job_description_id) {
-      console.log('❌ ERROR: Job description ID is required');
       return res.status(400).json({ error: 'Job description ID is required' });
     }
 
-    console.log(`\n🔍 Fetching job description ID: ${job_description_id}`);
     // Fetch job description
     const jobData = await queryOne(
       'SELECT * FROM job_descriptions WHERE id = ?',
@@ -562,16 +525,11 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
     );
 
     if (!jobData) {
-      console.log(`❌ ERROR: Job description not found for ID: ${job_description_id}`);
       return res.status(404).json({ error: 'Job description not found' });
     }
 
-    console.log(`✅ Job description found: "${jobData.title}"`);
-
     const results = [];
     const errors = [];
-
-    console.log(`\n📝 Processing ${req.files.length} files...\n`);
 
     for (let i = 0; i < req.files.length; i++) {
       const file = req.files[i];
@@ -583,8 +541,6 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
       }
       
       try {
-        console.log(`[${i + 1}/${req.files.length}] Processing: ${file.originalname}`);
-        
         // Use helper function to process resume
         const {
           parsedResume,
@@ -620,10 +576,9 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
             filePath: talygenUpload.filePath
           } : null
         });
-        console.log(`   ✅ SUCCESS - Completed in ${fileProcessingTime}s\n`);
       } catch (error) {
         const fileProcessingTime = ((Date.now() - fileStartTime) / 1000).toFixed(2);
-        console.error(`   ❌ ERROR processing ${file.originalname}:`, error.message);
+        console.error(`     ERROR processing ${file.originalname}:`, error.message);
         if (error.stack) {
           console.error(`   Stack:`, error.stack);
         }
@@ -642,12 +597,6 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
     }
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`\n========== BULK UPLOAD COMPLETED ==========`);
-    console.log(`✅ Successfully processed: ${results.length} files`);
-    console.log(`❌ Failed: ${errors.length} files`);
-    console.log(`⏱️  Total time: ${totalTime}s`);
-    console.log(`📊 Average time per file: ${(totalTime / req.files.length).toFixed(2)}s`);
-    console.log(`==========================================\n`);
 
     res.json({
       success: true,
@@ -658,10 +607,6 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
     });
   } catch (error) {
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.error(`\n❌ BULK UPLOAD FAILED after ${totalTime}s`);
-    console.error('Error:', error.message);
-    console.error('Stack:', error.stack);
-    console.log(`==========================================\n`);
     res.status(200).json({
       error: 'Failed to process resumes',
       message: error.message
@@ -672,9 +617,6 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
 // Upload file to Talygen API and store response
 router.post('/talygen', authenticate, requireWriteAccess, uploadMemory.single('file'), handleMulterError, async (req, res) => {
   const startTime = Date.now();
-  console.log('\n========== TALYGEN UPLOAD STARTED ==========');
-  console.log(`Timestamp: ${new Date().toISOString()}`);
-  console.log(`User: ${req.user.email} (${req.user.role})`);
   
   try {
     if (!req.file) {
@@ -691,8 +633,6 @@ router.post('/talygen', authenticate, requireWriteAccess, uploadMemory.single('f
     const fileBuffer = req.file.buffer; // File is in memory as buffer
     const fileName = req.file.originalname;
     const fileMimetype = req.file.mimetype;
-
-    console.log(`📤 Uploading file to Talygen API: ${fileName} (${(fileBuffer.length / 1024).toFixed(2)} KB)`);
 
     // Create form data
     const formData = new FormData();
@@ -721,12 +661,9 @@ router.post('/talygen', authenticate, requireWriteAccess, uploadMemory.single('f
       maxBodyLength: Infinity
     });
 
-    console.log(`✅ File uploaded successfully to Talygen API`);
-
     const apiResponse = response.data;
 
     // Store response in database (standalone upload, no resume_id)
-    console.log(`💾 Saving upload response to database...`);
     const result = await query(
       `INSERT INTO file_uploads (
         resume_id, original_file_name, file_name, file_path, file_thumb_path, folder_id,
@@ -752,13 +689,10 @@ router.post('/talygen', authenticate, requireWriteAccess, uploadMemory.single('f
       'SELECT * FROM file_uploads WHERE id = ?',
       [result.insertId]
     );
-    console.log(`✅ Upload response saved to database (ID: ${result.insertId})`);
 
     // No cleanup needed - file was in memory only, not saved to disk
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`✅ SUCCESS - Upload completed in ${totalTime}s`);
-    console.log(`==========================================\n`);
 
     res.json({
       success: true,
@@ -779,14 +713,6 @@ router.post('/talygen', authenticate, requireWriteAccess, uploadMemory.single('f
     // No cleanup needed - file was in memory only, not saved to disk
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.error(`\n❌ TALYGEN UPLOAD FAILED after ${totalTime}s`);
-    console.error('Error:', error.message);
-    if (error.response) {
-      console.error('API Response Status:', error.response.status);
-      console.error('API Response Data:', error.response.data);
-    }
-    console.error('Stack:', error.stack);
-    console.log(`==========================================\n`);
     
     res.status(500).json({
       error: 'Failed to upload file to Talygen',
@@ -800,8 +726,6 @@ router.post('/talygen', authenticate, requireWriteAccess, uploadMemory.single('f
 router.get('/talygen/:id/download', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-
-    console.log(`📥 Downloading file from Talygen (Upload ID: ${id})`);
 
     const fileUpload = await queryOne(
       'SELECT * FROM file_uploads WHERE id = ?',
@@ -844,8 +768,6 @@ router.get('/talygen/:id/download', authenticate, async (req, res) => {
 
     // Pipe the response stream to the client
     response.data.pipe(res);
-
-    console.log(`✅ File download initiated: ${downloadFileName}`);
   } catch (error) {
     console.error('Error downloading file from Talygen:', error);
     

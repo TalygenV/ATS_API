@@ -197,8 +197,6 @@ router.get('/', authenticate, async (req, res) => {
 
 router.post('/evaluate-with-qa',  upload.single('resume'), handleMulterError, async (req, res) => {
   const startTime = Date.now();
-  console.log('\n========== EVALUATION WITH Q&A STARTED ==========');
-  console.log(`Timestamp: ${new Date().toISOString()}`);
   
   let filePath = null;
   
@@ -256,22 +254,13 @@ router.post('/evaluate-with-qa',  upload.single('resume'), handleMulterError, as
     const fileName = req.file.originalname;
     const mimetype = req.file.mimetype;
 
-    console.log(`📄 Processing resume: ${fileName}`);
-    console.log(`📝 Job description length: ${job_description.length} characters`);
-    console.log(`❓ Q&A responses: ${Object.keys(questionAnswers).length} questions`);
-
     // Extract text from file
-    console.log(`   📄 Extracting text from file...`);
     const resumeText = await extractTextFromFile(filePath, mimetype);
-    console.log(`   ✅ Text extracted (${resumeText.length} characters)`);
 
     // Parse resume with Groq
-    console.log(`   🤖 Parsing resume with Groq AI...`);
     const parsedData = await parseResumeWithGemini(resumeText, fileName);
-    console.log(`   ✅ Resume parsed - Name: ${parsedData.name || 'N/A'}, Email: ${parsedData.email || 'N/A'}`);
 
     // Match resume with job description and Q&A
-    console.log(`   🎯 Matching resume with job description and Q&A...`);
     const matchResults = await matchResumeWithJobDescriptionAndQA(
       resumeText,
       job_description,
@@ -279,19 +268,14 @@ router.post('/evaluate-with-qa',  upload.single('resume'), handleMulterError, as
       questionAnswers
     );
 
-    console.log(`   📊 Match scores - Overall: ${matchResults.overall_match}%, Skills: ${matchResults.skills_match}%, Experience: ${matchResults.experience_match}%, Education: ${matchResults.education_match}%`);
-
     // Clean up uploaded file
     try {
       await fs.unlink(filePath);
-      console.log(`   🗑️  Cleaned up temporary file: ${filePath}`);
     } catch (cleanupError) {
-      console.warn(`   ⚠️  Could not clean up file: ${cleanupError.message}`);
+      // Ignore cleanup errors
     }
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`✅ SUCCESS - Evaluation completed in ${totalTime}s`);
-    console.log(`==========================================\n`);
 
     // Return the same format as matchResumeWithJobDescription with additional candidate information
     res.json({
@@ -324,17 +308,12 @@ router.post('/evaluate-with-qa',  upload.single('resume'), handleMulterError, as
     if (filePath) {
       try {
         await fs.unlink(filePath);
-        console.log(`🗑️  Cleaned up file on error: ${filePath}`);
       } catch (e) {
         // Ignore cleanup errors
       }
     }
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.error(`\n❌ EVALUATION FAILED after ${totalTime}s`);
-    console.error('Error:', error.message);
-    console.error('Stack:', error.stack);
-    console.log(`==========================================\n`);
     
     res.status(500).json({
       success: false,
@@ -348,8 +327,6 @@ router.post('/evaluate-with-qa',  upload.single('resume'), handleMulterError, as
 router.get('/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    console.log(`📋 Fetching evaluation ID: ${id} for user: ${req.user.email}`);
-  
 
     //change id with resume_id 
     const evaluation = await queryOne(
@@ -444,13 +421,6 @@ router.get('/:id', authenticate, async (req, res) => {
     
     // Convert datetime fields to UTC
     const convertedEvaluation = convertResultToUTC(parsedEvaluation);
-    
-    console.log('Fetched evaluation:', {
-      id: parsedEvaluation.id,
-      resume_id: parsedEvaluation.resume_id,
-      has_resume: !!parsedEvaluation.resume,
-      has_job_description: !!parsedEvaluation.job_description
-    });
 
     res.json({
       success: true,

@@ -592,7 +592,6 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
       // This is a duplicate - create a new version
       parentId = originalResumeId;
       versionNumber = await getNextVersionNumber(originalResumeId);
-      console.log(`📝 Duplicate detected! Creating version ${versionNumber} for candidate (Original ID: ${originalResumeId})`);
     }
 
     const fullJobDescription = `${job.title}\n\n${job.description}\n\n${job.requirements || ''}`;
@@ -630,7 +629,7 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
   try {
     talygenUpload = await uploadRouter.uploadToTalygen(filePath, fileName, mimetype, resumeId);
   } catch (talygenError) {
-    console.error(`⚠️  Talygen upload failed, continuing with resume processing:`, talygenError.message);
+    console.error(`   Talygen upload failed, continuing with resume processing:`, talygenError.message);
   }
 
     // Evaluate with resume + JD + Q&A
@@ -719,7 +718,6 @@ router.post('/:token/submit', upload.single('resume'), async (req, res) => {
     }
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`Candidate evaluation via link completed in ${totalTime}s (ID: ${evaluationId})`);
 
     const responseData = {
       evaluation_id: evaluationId,

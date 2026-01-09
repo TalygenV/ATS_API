@@ -1,9 +1,17 @@
+// Resume Matcher Utility
+// This module handles matching resumes against job descriptions using AI
+// Provides scoring and detailed analysis for candidate evaluation
+
 // const groq = require('../config/groq');
 const { getGroqClient } = require('../config/groq')
 
 /**
  * Extract JSON from text by finding matching braces
  * Handles cases where there's text before or after the JSON object
+ * Used to clean AI responses that may include explanatory text
+ * 
+ * @param {string} text - Text containing JSON object
+ * @returns {string|null} Extracted JSON string or null if not found
  */
 function extractJSON(text) {
   const startIndex = text.indexOf('{');
@@ -53,13 +61,16 @@ function extractJSON(text) {
 
 /**
  * Compare resume with job description and generate match scores
+ * Uses AI to analyze and score how well a candidate matches a job description
+ * Provides detailed breakdown of skills, experience, and education matches
+ * 
  * @param {string} resumeText - Full text content of the resume
  * @param {string} jobDescription - Job description text
  * @param {object} parsedResumeData - Parsed resume data (name, email, skills, experience, education, etc.)
- * @returns {Promise<object>} Match scores and details
+ * @returns {Promise<object>} Match scores and details including overall_match, skills_match, experience_match, education_match, status, and rejection_reason
  */
 async function matchResumeWithJobDescription(resumeText, jobDescription, parsedResumeData) {
-  // Using Groq's llama-3.1-8b-instant model
+  // Using Groq's llama-3.1-8b-instant model for fast matching analysis
   const modelName = 'llama-3.1-8b-instant';
   
   const prompt = `You are an expert Technical Recruiter evaluating a candidate's resume against a job description. Analyze the resume and job description, then provide a comprehensive matching score and detailed analysis.
@@ -133,7 +144,6 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
         }
         
         const delay = baseDelay * Math.pow(2, attempt - 1);
-        console.log(`   ⚠️  Attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -143,7 +153,6 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
   let lastError = null;
   
   try {
-    console.log(`   🔄 Using Groq model for matching: ${modelName}`);
     const groq = await getGroqClient();
     // Retry API call with exponential backoff
     const result = await retryWithBackoff(async () => {
@@ -161,7 +170,6 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
     }, 3, 2000);
     
     const text = result.choices[0]?.message?.content || '';
-    console.log(`   ✅ Got matching response from ${modelName}`);
 
       // Clean the response to extract JSON
       let jsonText = text.trim();
@@ -205,8 +213,8 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
         matchData = JSON.parse(jsonText);
       } catch (parseError) {
         // Log the problematic JSON for debugging
-        console.error(`   ❌ JSON Parse Error: ${parseError.message}`);
-        console.error(`   ❌ JSON text length: ${jsonText.length}`);
+        console.error(`     JSON Parse Error: ${parseError.message}`);
+        console.error(`     JSON text length: ${jsonText.length}`);
         
         // Extract position from error message if available
         const positionMatch = parseError.message.match(/position (\d+)/);
@@ -214,16 +222,16 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
           const position = parseInt(positionMatch[1]);
           const start = Math.max(0, position - 100);
           const end = Math.min(jsonText.length, position + 100);
-          console.error(`   ❌ Context around error position ${position}:`);
+          console.error(`     Context around error position ${position}:`);
           console.error(`   ${jsonText.substring(start, end)}`);
           console.error(`   ${' '.repeat(Math.min(100, position - start))}^`);
         } else {
-          console.error(`   ❌ JSON preview (first 500 chars): ${jsonText.substring(0, 500)}`);
+          console.error(`     JSON preview (first 500 chars): ${jsonText.substring(0, 500)}`);
         }
         
         // Also log the last 200 chars in case the issue is at the end
         if (jsonText.length > 500) {
-          console.error(`   ❌ JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
+          console.error(`     JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
         }
         
         throw new Error(`Failed to parse JSON response: ${parseError.message}. Response may contain invalid characters.`);
@@ -231,20 +239,23 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
       
       // Validate and normalize the data
       matchData = validateAndNormalizeMatchData(matchData);
-      
-      console.log(`   ✅ Successfully matched resume with ${modelName}`);
 
     return matchData;
   } catch (error) {
     lastError = error;
     const errorMsg = error.message || 'Unknown error';
-    console.error(`   ❌ Error matching resume with Groq: ${errorMsg}`);
+    console.error(`     Error matching resume with Groq: ${errorMsg}`);
     throw new Error(`Error matching resume with job description: ${errorMsg}. Please check your API key and network connection.`);
   }
 }
 
 /**
  * Validate and normalize match data
+ * Ensures all match scores are valid numbers between 0-100
+ * Validates status field and sets defaults for missing fields
+ * 
+ * @param {Object} matchData - Raw match data from AI
+ * @returns {Object} Validated and normalized match data
  */
 function validateAndNormalizeMatchData(matchData) {
   // Ensure all numeric fields are valid numbers between 0-100
@@ -296,17 +307,20 @@ function validateAndNormalizeMatchData(matchData) {
 
 /**
  * Compare resume with job description and generate match scores, including Q&A responses
+ * Enhanced matching that considers both resume content and candidate's Q&A responses
+ * Provides more accurate evaluation by validating resume claims with Q&A answers
+ * 
  * @param {string} resumeText - Full text content of the resume
  * @param {string} jobDescription - Job description text
  * @param {object} parsedResumeData - Parsed resume data (name, email, skills, experience, education, etc.)
  * @param {object} questionAnswers - Object with questions as keys and answers as values
- * @returns {Promise<object>} Match scores and details
+ * @returns {Promise<object>} Match scores and details including overall_match, skills_match, experience_match, education_match, status, and rejection_reason
  */
 async function matchResumeWithJobDescriptionAndQA(resumeText, jobDescription, parsedResumeData, questionAnswers = {}) {
-  // Using Groq's llama-3.1-8b-instant model
+  // Using Groq's llama-3.1-8b-instant model for fast matching analysis with Q&A
   const modelName = 'llama-3.1-8b-instant';
   
-  // Format Q&A for the prompt
+  // Format Q&A responses for inclusion in the AI prompt
   let qaSection = '';
   if (questionAnswers && Object.keys(questionAnswers).length > 0) {
     qaSection = '\n\nCANDIDATE Q&A RESPONSES:\n';
@@ -386,7 +400,6 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
         }
         
         const delay = baseDelay * Math.pow(2, attempt - 1);
-        console.log(`   ⚠️  Attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -396,7 +409,6 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
   let lastError = null;
   
   try {
-    console.log(`   🔄 Using Groq model for matching with Q&A: ${modelName}`);
     const groq = await getGroqClient();
     // Retry API call with exponential backoff
     const result = await retryWithBackoff(async () => {
@@ -414,7 +426,6 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
     }, 3, 2000);
     
     const text = result.choices[0]?.message?.content || '';
-    console.log(`   ✅ Got matching response from ${modelName}`);
 
     // Clean the response to extract JSON
     let jsonText = text.trim();
@@ -452,8 +463,8 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
       matchData = JSON.parse(jsonText);
     } catch (parseError) {
       // Log the problematic JSON for debugging
-      console.error(`   ❌ JSON Parse Error: ${parseError.message}`);
-      console.error(`   ❌ JSON text length: ${jsonText.length}`);
+      console.error(`JSON Parse Error: ${parseError.message}`);
+      console.error(`JSON text length: ${jsonText.length}`);
       
       // Extract position from error message if available
       const positionMatch = parseError.message.match(/position (\d+)/);
@@ -461,16 +472,16 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
         const position = parseInt(positionMatch[1]);
         const start = Math.max(0, position - 100);
         const end = Math.min(jsonText.length, position + 100);
-        console.error(`   ❌ Context around error position ${position}:`);
+        console.error(`Context around error position ${position}:`);
         console.error(`   ${jsonText.substring(start, end)}`);
         console.error(`   ${' '.repeat(Math.min(100, position - start))}^`);
       } else {
-        console.error(`   ❌ JSON preview (first 500 chars): ${jsonText.substring(0, 500)}`);
+        console.error(`JSON preview (first 500 chars): ${jsonText.substring(0, 500)}`);
       }
       
       // Also log the last 200 chars in case the issue is at the end
       if (jsonText.length > 500) {
-        console.error(`   ❌ JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
+        console.error(`JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
       }
       
       throw new Error(`Failed to parse JSON response: ${parseError.message}. Response may contain invalid characters.`);
@@ -478,14 +489,12 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
     
     // Validate and normalize the data
     matchData = validateAndNormalizeMatchData(matchData);
-    
-    console.log(`   ✅ Successfully matched resume with Q&A using ${modelName}`);
 
     return matchData;
   } catch (error) {
     lastError = error;
     const errorMsg = error.message || 'Unknown error';
-    console.error(`   ❌ Error matching resume with Groq: ${errorMsg}`);
+    console.error(` Error matching resume with Groq: ${errorMsg}`);
     throw new Error(`Error matching resume with job description and Q&A: ${errorMsg}. Please check your API key and network connection.`);
   }
 }

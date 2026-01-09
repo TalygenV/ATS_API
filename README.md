@@ -6,9 +6,9 @@ An Applicant Tracking System (ATS) that parses resumes using Google's Gemini AI 
 
 - 📄 Upload single or multiple resume files (PDF, DOC, DOCX, TXT)
 - 🤖 AI-powered resume parsing using Google Gemini
-- 💾 Store parsed data in Supabase database
-- 🔍 Search and view parsed resumes
-- 📊 Extract skills, experience, education, location, and personal details
+-   Store parsed data in Supabase database
+-   Search and view parsed resumes
+-   Extract skills, experience, education, location, and personal details
 
 ## Prerequisites
 

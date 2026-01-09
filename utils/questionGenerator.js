@@ -1,9 +1,17 @@
+// Question Generator Utility
+// This module generates interview questions from job descriptions using AI
+// Also extracts structured information from job descriptions
+
 // const groq = require('../config/groq');
 const { getGroqClient } = require('../config/groq')
 
 /**
  * Extract JSON from text by finding matching braces
  * Handles cases where there's text before or after the JSON object
+ * Used to clean AI responses that may include explanatory text
+ * 
+ * @param {string} text - Text containing JSON object
+ * @returns {string|null} Extracted JSON string or null if not found
  */
 function extractJSON(text) {
   const startIndex = text.indexOf('{');
@@ -51,7 +59,17 @@ function extractJSON(text) {
   return fallbackMatch ? fallbackMatch[0] : null;
 }
 
-// Helper function to retry API calls with exponential backoff
+/**
+ * Retry function with exponential backoff for question generation
+ * Retries failed API calls with increasing delays between attempts
+ * Only retries on network errors, not on API errors
+ * 
+ * @param {Function} fn - Async function to retry
+ * @param {number} maxRetries - Maximum number of retry attempts (default: 3)
+ * @param {number} baseDelay - Base delay in milliseconds (default: 1000)
+ * @returns {Promise<*>} Result from the function if successful
+ * @throws {Error} Last error if all retries fail
+ */
 async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
   let lastError;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -73,9 +91,6 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
       }
 
       const delay = baseDelay * Math.pow(2, attempt - 1);
-      console.log(
-        `   ⚠️  Attempt ${attempt}/${maxRetries} failed for question generation, retrying in ${delay}ms...`
-      );
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
@@ -83,15 +98,22 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
 }
 
 /**
- * Generate structured interview questions from a job description.
+ * Generate structured interview questions from a job description
+ * Creates objective screening questions that can be answered with Yes/No, True/False, or numeric values
+ * Questions are organized into categories for better candidate evaluation
+ * 
  * @param {string} jobDescription - Full job description text
  * @param {object} options - Optional metadata like title, level, tech stack
- * @returns {Promise<object>} Object with categories and questions
+ * @param {string} [options.title] - Job title
+ * @param {string} [options.seniority] - Seniority level
+ * @param {string} [options.yearsOfExperience] - Expected years of experience
+ * @returns {Promise<object>} Object with categories array containing questions
  */
 async function generateQuestionsFromJD(jobDescription, options = {}) {
-  // Using Groq's llama-3.1-8b-instant model
+  // Using Groq's llama-3.1-8b-instant model for fast question generation
   const modelName = 'llama-3.1-8b-instant';
 
+  // Extract optional metadata for context
   const { title, seniority, yearsOfExperience } = options;
 
   const prompt = `
@@ -105,7 +127,7 @@ JOB CONTEXT:
 JOB DESCRIPTION:
 ${jobDescription}
 
-🚨 STRICT RULES — MUST FOLLOW
+ STRICT RULES — MUST FOLLOW
 1. Every question MUST be answerable with ONLY one of these formats:
    • Yes/No
    • True/False
@@ -116,9 +138,9 @@ ${jobDescription}
 5. Do not repeat questions for the same competency even if mentioned multiple times.
 6. First category must ALWAYS be **Overall Experience** with the exact predefined question below.
 
-⚠️ CRITICAL OUTPUT FORMAT: Your response MUST start with the opening brace { and end with the closing brace }. Do NOT include any text, explanations, comments, or markdown before or after the JSON object. Do NOT use code blocks (\`\`\`json or \`\`\`). Do NOT add any prefix like "Here are the questions:" or "The generated questions are:". Your ENTIRE response must be ONLY the JSON object itself, nothing else.
+  CRITICAL OUTPUT FORMAT: Your response MUST start with the opening brace { and end with the closing brace }. Do NOT include any text, explanations, comments, or markdown before or after the JSON object. Do NOT use code blocks (\`\`\`json or \`\`\`). Do NOT add any prefix like "Here are the questions:" or "The generated questions are:". Your ENTIRE response must be ONLY the JSON object itself, nothing else.
 
-📌 JSON STRUCTURE (strict — must match exactly)
+ JSON STRUCTURE (strict — must match exactly)
 {
   "categories": [
     {
@@ -136,14 +158,14 @@ ${jobDescription}
   ]
 }
 
-🔧 ADDITIONAL RULES FOR NEW QUESTIONS:
+  ADDITIONAL RULES FOR NEW QUESTIONS:
 - For skill validation → type = "yes_no"
 - For mandatory compliance (shift, location, visa, etc.) → type = "yes_no" or "true_false"
 - For experience duration → type = "number" and include "unit": "years"
 - Max 5 categories in total
 - 1–3 questions per category only
 
-📌 FORMATTING REQUIREMENTS:
+  FORMATTING REQUIREMENTS:
 - Every category must have:
   - id (snake_case)
   - label (readable name)
@@ -164,7 +186,6 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
   let lastError = null;
 
   try {
-    console.log(`   🔄 Using Groq model for question generation: ${modelName}`);
     const groq = await getGroqClient();
     const result = await retryWithBackoff(async () => {
       return await groq.chat.completions.create({
@@ -181,7 +202,6 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
     }, 3, 2000);
 
     const text = result.choices[0]?.message?.content || '';
-    console.log(`   ✅ Got question generation response from ${modelName}`);
 
       let jsonText = text.trim();
 
@@ -222,8 +242,8 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
       try {
         data = JSON.parse(jsonText);
       } catch (parseError) {
-        console.error(`   ❌ JSON Parse Error (questions): ${parseError.message}`);
-        console.error(`   ❌ JSON text length: ${jsonText.length}`);
+        console.error(`     JSON Parse Error (questions): ${parseError.message}`);
+        console.error(`     JSON text length: ${jsonText.length}`);
         
         // Extract position from error message if available
         const positionMatch = parseError.message.match(/position (\d+)/);
@@ -231,18 +251,18 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
           const position = parseInt(positionMatch[1]);
           const start = Math.max(0, position - 100);
           const end = Math.min(jsonText.length, position + 100);
-          console.error(`   ❌ Context around error position ${position}:`);
+          console.error(`     Context around error position ${position}:`);
           console.error(`   ${jsonText.substring(start, end)}`);
           console.error(`   ${' '.repeat(Math.min(100, position - start))}^`);
         } else {
           console.error(
-            `   ❌ JSON preview (first 400 chars): ${jsonText.substring(0, 400)}`
+            `     JSON preview (first 400 chars): ${jsonText.substring(0, 400)}`
           );
         }
         
         // Also log the last 200 chars in case the issue is at the end
         if (jsonText.length > 400) {
-          console.error(`   ❌ JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
+          console.error(`     JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
         }
         
         throw new Error(
@@ -261,12 +281,11 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
         questions: Array.isArray(cat.questions) ? cat.questions : []
       }));
 
-    console.log(`   ✅ Successfully generated questions with ${modelName}`);
     return data;
   } catch (error) {
     lastError = error;
     const errorMsg = error.message || 'Unknown error';
-    console.error(`   ❌ Error generating questions with Groq: ${errorMsg}`);
+    console.error(`     Error generating questions with Groq: ${errorMsg}`);
     throw new Error(
       `Error generating questions from job description: ${errorMsg}. Please check your API key and network connection.`
     );
@@ -274,12 +293,15 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
 }
 
 /**
- * Extract structured information from a job description.
+ * Extract structured information from a job description
+ * Parses job description text and extracts key fields like title, location, skills, experience requirements
+ * Returns normalized data structure for database storage
+ * 
  * @param {string} jobDescription - Full job description text
- * @returns {Promise<object>} Object with extracted job information
+ * @returns {Promise<object>} Object with extracted job information including Job_Title, Location, Skill, Experience_MinYear, Experience_MaxYear, etc.
  */
 async function extractJobDescriptionInfo(jobDescription) {
-  // Using Groq's llama-3.1-8b-instant model
+  // Using Groq's llama-3.1-8b-instant model for fast information extraction
   const modelName = 'llama-3.1-8b-instant';
 
   const prompt = `
@@ -288,9 +310,9 @@ async function extractJobDescriptionInfo(jobDescription) {
 JOB DESCRIPTION:
 ${jobDescription}
 
-⚠️ CRITICAL OUTPUT FORMAT: Your response MUST start with the opening brace { and end with the closing brace }. Do NOT include any text, explanations, comments, or markdown before or after the JSON object. Do NOT use code blocks (\`\`\`json or \`\`\`). Do NOT add any prefix like "Here is the extracted information:" or "The extracted data is:". Your ENTIRE response must be ONLY the JSON object itself, nothing else.
+  CRITICAL OUTPUT FORMAT: Your response MUST start with the opening brace { and end with the closing brace }. Do NOT include any text, explanations, comments, or markdown before or after the JSON object. Do NOT use code blocks (\`\`\`json or \`\`\`). Do NOT add any prefix like "Here is the extracted information:" or "The extracted data is:". Your ENTIRE response must be ONLY the JSON object itself, nothing else.
 
-📌 JSON STRUCTURE (strict — must match exactly)
+  JSON STRUCTURE (strict — must match exactly)
 {
   "Job_Title": "",
   "Positions": "",
@@ -302,7 +324,7 @@ ${jobDescription}
   "Description": ""
 }
 
-🔧 EXTRACTION RULES:
+  EXTRACTION RULES:
 1. **Job_Title**: Extract the exact job title/position name (e.g., "Senior Software Engineer", "Product Manager"). If not found, use empty string "".
 2. **Positions**: Extract the number of open positions if mentioned (e.g., "2", "5", "Multiple"). If not found, use empty string "".
 3. **Location**: Extract the job location including city, state, country, or remote/work-from-home status (e.g., "New York, NY", "Remote", "San Francisco, CA, USA"). If not found, use empty string "".
@@ -312,7 +334,7 @@ ${jobDescription}
 7. **Short_Description**: Extract a brief summary (1-2 sentences) of the role or a short description if provided. If not found, use empty string "".
 8. **Description**: Use the full job description text provided. If you need to use a cleaned/processed version, ensure it captures all key details.
 
-📌 FORMATTING REQUIREMENTS:
+  FORMATTING REQUIREMENTS:
 - All string values must be properly quoted and escaped
 - Ensure all special characters in string values are properly escaped (e.g., quotes, newlines, backslashes). Use \\n for newlines, \\" for quotes, \\\\ for backslashes
 - Do not include unescaped control characters or invalid JSON characters
@@ -325,7 +347,6 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
   let lastError = null;
 
   try {
-    console.log(`   🔄 Using Groq model for job description extraction: ${modelName}`);
     const groq = await getGroqClient();
     const result = await retryWithBackoff(async () => {
       return await groq.chat.completions.create({
@@ -342,7 +363,6 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
     }, 3, 2000);
 
     const text = result.choices[0]?.message?.content || '';
-    console.log(`   ✅ Got job description extraction response from ${modelName}`);
 
     let jsonText = text.trim();
 
@@ -383,8 +403,8 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
     try {
       data = JSON.parse(jsonText);
     } catch (parseError) {
-      console.error(`   ❌ JSON Parse Error (job description extraction): ${parseError.message}`);
-      console.error(`   ❌ JSON text length: ${jsonText.length}`);
+      console.error(`     JSON Parse Error (job description extraction): ${parseError.message}`);
+      console.error(`     JSON text length: ${jsonText.length}`);
       
       // Extract position from error message if available
       const positionMatch = parseError.message.match(/position (\d+)/);
@@ -392,18 +412,18 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
         const position = parseInt(positionMatch[1]);
         const start = Math.max(0, position - 100);
         const end = Math.min(jsonText.length, position + 100);
-        console.error(`   ❌ Context around error position ${position}:`);
+        console.error(`     Context around error position ${position}:`);
         console.error(`   ${jsonText.substring(start, end)}`);
         console.error(`   ${' '.repeat(Math.min(100, position - start))}^`);
       } else {
         console.error(
-          `   ❌ JSON preview (first 400 chars): ${jsonText.substring(0, 400)}`
+          `     JSON preview (first 400 chars): ${jsonText.substring(0, 400)}`
         );
       }
       
       // Also log the last 200 chars in case the issue is at the end
       if (jsonText.length > 400) {
-        console.error(`   ❌ JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
+        console.error(`     JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
       }
       
       throw new Error(
@@ -440,12 +460,11 @@ Remember: Your response must be ONLY valid JSON starting with { and ending with 
       Description: typeof data.Description === 'string' ? data.Description : jobDescription
     };
 
-    console.log(`   ✅ Successfully extracted job description information with ${modelName}`);
     return normalizedData;
   } catch (error) {
     lastError = error;
     const errorMsg = error.message || 'Unknown error';
-    console.error(`   ❌ Error extracting job description info with Groq: ${errorMsg}`);
+    console.error(`     Error extracting job description info with Groq: ${errorMsg}`);
     throw new Error(
       `Error extracting information from job description: ${errorMsg}. Please check your API key and network connection.`
     );

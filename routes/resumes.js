@@ -129,34 +129,23 @@ router.get('/search/:query', authenticate, async (req, res) => {
 // Download original resume file (all authenticated users can download)
 router.get('/:id/download', authenticate, async (req, res) => {
   const startTime = Date.now();
-  console.log(`\n==========================================`);
-  console.log(`📥 DOWNLOAD REQUEST - Resume ID: ${req.params.id}`);
-  console.log(`==========================================`);
   
   try {
     const { id } = req.params;
     const fs = require('fs').promises;
     const path = require('path');
 
-    console.log(`🔍 Step 1: Looking up resume with ID: ${id}`);
     const resume = await queryOne(
       'SELECT  file_name FROM resumes WHERE id = ?',
       [id]
     );
 
     if (!resume) {
-      console.error(`❌ Resume not found with ID: ${id}`);
       return res.status(404).json({ error: 'Resume not found' });
     }
 
-    console.log(`✅ Resume found:`);
-    console.log(`   - File Name: ${resume.file_name}`);
-
     // First, try to find the file in file_uploads table (Talygen storage)
     // Use resume_id for direct connection
-    console.log(`\n🔍 Step 2: Searching for file_upload record...`);
-    console.log(`   - Searching by resume_id: ${id}`);
-    
     let fileUpload = await queryOne(
       'SELECT * FROM file_uploads WHERE resume_id = ? ORDER BY created_at DESC LIMIT 1',
       [id]
@@ -164,9 +153,6 @@ router.get('/:id/download', authenticate, async (req, res) => {
 
     // Fallback: If not found by resume_id, try filename matching (for backward compatibility)
     if (!fileUpload) {
-      console.log(`   - Not found by resume_id, trying filename match (backward compatibility)...`);
-      console.log(`   - Searching by exact match: original_file_name = "${resume.file_name}"`);
-      
       fileUpload = await queryOne(
         'SELECT * FROM file_uploads WHERE original_file_name = ? ORDER BY created_at DESC LIMIT 1',
         [resume.file_name]
@@ -174,7 +160,6 @@ router.get('/:id/download', authenticate, async (req, res) => {
 
       // If not found by exact match, try case-insensitive match
       if (!fileUpload) {
-        console.log(`   - Exact match not found, trying case-insensitive match...`);
         fileUpload = await queryOne(
           'SELECT * FROM file_uploads WHERE LOWER(original_file_name) = LOWER(?) ORDER BY created_at DESC LIMIT 1',
           [resume.file_name]
@@ -183,7 +168,6 @@ router.get('/:id/download', authenticate, async (req, res) => {
 
       // If still not found, try matching by file_name column
       if (!fileUpload) {
-        console.log(`   - Case-insensitive match not found, trying file_name column match...`);
         fileUpload = await queryOne(
           'SELECT * FROM file_uploads WHERE file_name = ? OR LOWER(file_name) = LOWER(?) ORDER BY created_at DESC LIMIT 1',
           [resume.file_name, resume.file_name]
@@ -195,7 +179,7 @@ router.get('/:id/download', authenticate, async (req, res) => {
     
   } catch (error) {
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.error(`\n❌ ERROR downloading resume:`);
+    console.error(`  ERROR downloading resume:`);
     console.error(`   - Error Message: ${error.message}`);
     console.error(`   - Error Code: ${error.code || 'N/A'}`);
     console.error(`   - Error Name: ${error.name || 'N/A'}`);
@@ -204,7 +188,7 @@ router.get('/:id/download', authenticate, async (req, res) => {
       console.error(`   - Response Status Text: ${error.response.statusText || 'N/A'}`);
     }
     console.error(`   - Stack Trace:`, error.stack);
-    console.error(`⏱️  Total time before error: ${totalTime}s`);
+    console.error(`   Total time before error: ${totalTime}s`);
     console.error(`==========================================\n`);
     
     res.status(500).json({

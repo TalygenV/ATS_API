@@ -1164,13 +1164,8 @@ router.get('/available-slots', authenticate, async (req, res) => {
     sql += `
       ORDER BY s.start_time ASC
     `;
-
-    console.log('Available slots query:', sql);
-    console.log('Available slots params:', params);
     
     const rows = await query(sql, params);
-    
-    console.log('Available slots found:', rows.length);
 
     const slots = rows.map(row => {
       const slot = {
@@ -1226,8 +1221,6 @@ router.post('/available-slots/group', authenticate, async (req, res) => {
     // const placeholders = mappedInterviewers.map(() => '?').join(',');
     const params = [...mappedInterviewers    ,interviewerCount ];
    const placeholders = mappedInterviewers.map(() => '?').join(',');
-
-  console.log(placeholders , "placeholders")
    
 // let sql = `
 //  select * from interviewer_time_slots
@@ -1269,12 +1262,7 @@ HAVING COUNT(DISTINCT interviewer_id) = ?
 ORDER BY start_time;
 
 `
-    console.log('Available slots query:', sql);
-    console.log('Available slots params:', params);
-    
     const rows = await query(sql, params);
-    
-    console.log('Available slots found:', rows.length);
 
     const slots = rows.map(row => {
       // Parse JSON arrays from JSON_ARRAYAGG

@@ -1,9 +1,14 @@
+// Application Validator Utility
+// This module validates candidate applications to prevent duplicates and conflicts
+
 const { queryOne, query } = require('../config/database');
 
 /**
  * Check if a candidate has already applied within the last 6 months
- * @param {string} email - Candidate email (normalized to lowercase)
- * @returns {Promise<boolean>} - True if candidate has applied within last 6 months, false otherwise
+ * Prevents duplicate applications from the same candidate within a 6-month period
+ * 
+ * @param {string} email - Candidate email address (will be normalized to lowercase)
+ * @returns {Promise<boolean>} True if candidate has applied within last 6 months, false otherwise
  */
 async function hasRecentApplication(email) {
   if (!email) {
@@ -36,7 +41,14 @@ async function hasRecentApplication(email) {
   }
 }
 
-
+/**
+ * Check if a candidate already has an interview assigned
+ * Prevents duplicate interview assignments for the same candidate
+ * Also performs cleanup of orphaned interview data for candidates without active interviews
+ * 
+ * @param {string} email - Candidate email address (will be normalized to lowercase)
+ * @returns {Promise<boolean>} True if candidate has an interview already assigned, false otherwise
+ */
 async function alreadyAssignInterView(email) {
   if (!email) {
     // If no email provided, we can't check, so allow the application
@@ -59,10 +71,11 @@ async function alreadyAssignInterView(email) {
       [normalizedEmail]
     );
 
-    // If no interview scheduled, clean up any orphaned data
+    // If no interview scheduled, clean up any orphaned interview data
+    // This handles cases where interview_details exist but shouldn't
     if(!interviewScheduled)
     {
-      // Get evaluations that might need cleanup
+      // Get evaluations that might need cleanup (pending evaluations without active interviews)
       const evaluationsToClean = await query(
         `SELECT ce.id
          FROM candidate_evaluations ce

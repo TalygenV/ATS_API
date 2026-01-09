@@ -1,13 +1,20 @@
+// Duplicate Checker Utility
+// This module handles duplicate resume detection and versioning
+// When a candidate submits multiple resumes, they are tracked as versions of the original
+
 const { queryOne, query } = require('../config/database');
 
 /**
  * Find the original resume ID for a candidate (the first resume without a parent_id)
  * This is used for versioning - all versions of a resume should point to the original
- * @param {Object} parsedData - Parsed resume data
- * @returns {Promise<number|null>} - Original resume ID if duplicate found, null otherwise
+ * Searches by email to find existing resumes for the same candidate
+ * 
+ * @param {Object} parsedData - Parsed resume data containing email and name
+ * @returns {Promise<number|null>} Original resume ID if duplicate found, null otherwise
  */
 async function findOriginalResume(parsedData) {
   try {
+    // Normalize email for comparison
     const email = parsedData.email?.toLowerCase().trim();
     // const name = parsedData.name?.toLowerCase().trim();
 
@@ -21,6 +28,7 @@ async function findOriginalResume(parsedData) {
     if (email) {
       // Check by email first (most reliable) - find the original (no parent_id or lowest version)
       // The original is the one with parent_id IS NULL or the one that is the parent of others
+      // Order by: resumes without parent_id first, then by version number, then by creation date
       original = await queryOne(
         `SELECT id, email, name, created_at, parent_id, version_number 
          FROM resumes 
@@ -52,6 +60,7 @@ async function findOriginalResume(parsedData) {
     if (original) {
       // If the found resume has a parent_id, return the parent_id (the true original)
       // Otherwise, return the resume's own ID (it is the original)
+      // This ensures we always return the root original resume ID
       return original.parent_id || original.id;
     }
 
@@ -88,12 +97,15 @@ async function findOriginalResume(parsedData) {
 
 /**
  * Get the next version number for a candidate's resume
- * @param {number} originalResumeId - The original resume ID (parent)
- * @returns {Promise<number>} - Next version number (1 if it's the first, 2+ for subsequent versions)
+ * Calculates the next version number by finding the maximum existing version
+ * Used when creating a new version of an existing resume
+ * 
+ * @param {number} originalResumeId - The original resume ID (parent resume)
+ * @returns {Promise<number>} Next version number (1 if it's the first, 2+ for subsequent versions)
  */
 async function getNextVersionNumber(originalResumeId) {
   try {
-    // Find the highest version number for this candidate
+    // Find the highest version number for this candidate (including original and all versions)
     const maxVersion = await queryOne(
       `SELECT COALESCE(MAX(version_number), 0) as max_version 
        FROM resumes 
@@ -112,12 +124,15 @@ async function getNextVersionNumber(originalResumeId) {
 /**
  * Check for duplicate resume based on email or email + name combination
  * Returns the ID of the oldest matching record if duplicate is found
- * @param {Object} parsedData - Parsed resume data
- * @returns {Promise<number|null>} - Parent ID if duplicate found, null otherwise
+ * 
  * @deprecated Use findOriginalResume instead for versioning support
+ * This function is kept for backward compatibility
+ * 
+ * @param {Object} parsedData - Parsed resume data
+ * @returns {Promise<number|null>} Parent ID if duplicate found, null otherwise
  */
 async function findDuplicateResume(parsedData) {
-  // For backward compatibility, use findOriginalResume
+  // For backward compatibility, delegate to findOriginalResume
   return await findOriginalResume(parsedData);
 }
 

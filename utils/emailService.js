@@ -1,9 +1,14 @@
+// Email Service Utility
+// This module handles sending emails for various notifications
+// Uses SMTP transporter configured in transpoter.js module
+
 // const nodemailer = require('nodemailer');
 
 // const transporter  = require("./transpoter");
 
 getSmtpTransporter = require("./transpoter");
 
+// Legacy email configuration - now handled by transpoter.js
 // // Email configuration from environment variables
 // const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
 // const EMAIL_PORT = process.env.EMAIL_PORT || 587;
@@ -26,15 +31,17 @@ getSmtpTransporter = require("./transpoter");
 //   });
 // }
 
-
 /**
  * Send email notification
+ * Generic email sending function used by other email functions
+ * Automatically generates plain text version from HTML if not provided
+ * 
  * @param {Object} options - Email options
- * @param {string} options.to - Recipient email
- * @param {string} options.subject - Email subject
+ * @param {string} options.to - Recipient email address
+ * @param {string} options.subject - Email subject line
  * @param {string} options.html - Email HTML content
- * @param {string} options.text - Email plain text content (optional)
- * @returns {Promise<boolean>} - Returns true if email sent successfully
+ * @param {string} [options.text] - Email plain text content (optional, auto-generated from HTML if not provided)
+ * @returns {Promise<boolean>} Returns true if email sent successfully, false otherwise
  */
 async function sendEmail({ to, subject, html, text }) {
 
@@ -52,7 +59,6 @@ async function sendEmail({ to, subject, html, text }) {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent successfully:', info.messageId);
     return true;
   } catch (error) {
     console.error('Error sending email:', error);
@@ -62,14 +68,21 @@ async function sendEmail({ to, subject, html, text }) {
 
 /**
  * Send interview assignment notification to interviewer
- * @param {Object} options
- * @param {string} options.interviewerEmail
- * @param {string} options.interviewerName
- * @param {string} options.candidateName
- * @param {string} options.candidateEmail
- * @param {string} options.jobTitle
- * @param {Date} options.interviewDate
- * @returns {Promise<boolean>}
+ * Notifies interviewer about their assigned candidate with meeting details
+ * Includes Zoom meeting links, meeting ID, and passcode
+ * 
+ * @param {Object} options - Interview assignment details
+ * @param {string} options.interviewerEmail - Interviewer's email address
+ * @param {string} options.meetingId - Zoom meeting ID
+ * @param {string} options.meetingPassword - Zoom meeting passcode
+ * @param {string} options.interviewerName - Interviewer's full name
+ * @param {string} options.candidateName - Candidate's full name
+ * @param {string} options.candidateEmail - Candidate's email address
+ * @param {string} options.jobTitle - Job position title
+ * @param {Date} options.interviewDate - Scheduled interview date and time
+ * @param {string} options.interViewLink - Zoom start meeting URL
+ * @param {string} options.interViewJoinLink - Zoom join meeting URL
+ * @returns {Promise<boolean>} Returns true if email sent successfully
  */
 async function sendInterviewAssignmentToInterviewer({
   interviewerEmail,
@@ -176,13 +189,19 @@ async function sendInterviewAssignmentToInterviewer({
 
 /**
  * Send interview assignment notification to candidate
- * @param {Object} options
- * @param {string} options.candidateEmail
- * @param {string} options.candidateName
- * @param {string} options.jobTitle
- * @param {Date} options.interviewDate
- * @param {string} options.interviewerName
- * @returns {Promise<boolean>}
+ * Notifies candidate about their scheduled interview with meeting details
+ * Includes Zoom meeting join link, meeting ID, and passcode
+ * 
+ * @param {Object} options - Interview assignment details
+ * @param {string} options.candidateEmail - Candidate's email address
+ * @param {string} options.meetingId - Zoom meeting ID
+ * @param {string} options.meetingPassword - Zoom meeting passcode
+ * @param {string} options.candidateName - Candidate's full name
+ * @param {string} options.jobTitle - Job position title
+ * @param {Date} options.interviewDate - Scheduled interview date and time
+ * @param {string} options.interviewerName - Interviewer's full name
+ * @param {string} options.interviewLink - Zoom join meeting URL
+ * @returns {Promise<boolean>} Returns true if email sent successfully
  */
 async function sendInterviewAssignmentToCandidate({
   candidateEmail,
@@ -291,13 +310,16 @@ async function sendInterviewAssignmentToCandidate({
 
 /**
  * Send interview feedback notification to HR/Admin
- * @param {Object} options
- * @param {Array<string>} options.hrAdminEmails - Array of HR and Admin emails
- * @param {string} options.candidateName
- * @param {string} options.jobTitle
- * @param {string} options.interviewerName
- * @param {string} options.status - Interviewer's status decision
- * @returns {Promise<boolean>}
+ * Notifies HR and Admin team when interviewer submits feedback
+ * Includes candidate details and interviewer's decision (selected/rejected/on_hold)
+ * 
+ * @param {Object} options - Feedback notification details
+ * @param {Array<string>} options.hrAdminEmails - Array of HR and Admin email addresses
+ * @param {string} options.candidateName - Candidate's full name
+ * @param {string} options.jobTitle - Job position title
+ * @param {string} options.interviewerName - Interviewer's full name
+ * @param {string} options.status - Interviewer's status decision (selected/rejected/on_hold)
+ * @returns {Promise<boolean>} Returns true if all emails sent successfully
  */
 async function sendInterviewFeedbackToHR({
   hrAdminEmails,

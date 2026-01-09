@@ -1,10 +1,15 @@
+// Database Configuration and Connection Pool
+// This module manages MySQL database connections using a connection pool
+// Handles JSON field parsing and timezone configuration
+
 const mysql = require('mysql2/promise');
 
-// MySQL type constants
+// MySQL type constants for field type detection
 const MYSQL_TYPE_JSON = 0xf5; // 245 - JSON type
 const MYSQL_TYPE_BLOB = 252;  // BLOB type (JSON_OBJECT can return this)
 
-// Database configuration
+// Database connection configuration
+// Uses environment variables with fallback defaults
 const dbConfig = {
   host: process.env.DB_HOST || '174.127.114.194',
   user: process.env.DB_USER || 'seth',
@@ -20,6 +25,15 @@ const dbConfig = {
   timeout: 60000, // 60 seconds
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
+  /**
+   * Custom type casting function for MySQL fields
+   * Handles JSON fields by returning them as UTF-8 strings for manual parsing
+   * This is necessary because JSON_OBJECT() results may come back as BLOB type
+   * 
+   * @param {Object} field - MySQL field metadata
+   * @param {Function} next - Default type casting function
+   * @returns {string|*} UTF-8 string for JSON fields, default casting for others
+   */
   typeCast: function (field, next) {
     // Handle JSON fields - return as strings with UTF-8 encoding so we can parse them ourselves
     // JSON_OBJECT() results may come back as BLOB type, so we check both JSON columnType and known JSON column names
@@ -31,19 +45,23 @@ const dbConfig = {
                        field.type === 'JSON' ||
                        jsonColumnNames.includes(field.name);
     
+    // Return JSON fields as UTF-8 strings for manual parsing
     if (isJsonType) {
       return field.string('utf8');
     }
+    // Use default type casting for non-JSON fields
     return next();
   }
 };
 
 
 
-// Create connection pool
+// Create MySQL connection pool
+// Connection pool manages multiple database connections efficiently
 const pool = mysql.createPool(dbConfig);
 
-// Set timezone to UTC for all connections
+// Set timezone to UTC for all new connections
+// Ensures consistent datetime handling across the application
 pool.on('connection', (connection) => {
   connection.query("SET time_zone = '+00:00'", (err) => {
     if (err) {
@@ -52,18 +70,22 @@ pool.on('connection', (connection) => {
   });
 });
 
-// Test connection with retry
+/**
+ * Test database connection with retry logic
+ * Attempts to connect to the database with exponential backoff
+ * 
+ * @param {number} retries - Maximum number of connection attempts (default: 3)
+ * @param {number} delay - Initial delay between retries in milliseconds (default: 2000)
+ * @returns {Promise<boolean>} True if connection successful, false otherwise
+ */
 const testConnection = async (retries = 3, delay = 2000) => {
   for (let i = 0; i < retries; i++) {
     try {
       const connection = await pool.getConnection();
-      console.log('MySQL database connected successfully');
       connection.release();
       return true;
     } catch (error) {
-      console.error(`Connection attempt ${i + 1} failed:`, error.message);
       if (i < retries - 1) {
-        console.log(`Retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {
         console.error('Failed to connect to MySQL database after', retries, 'attempts');
@@ -78,10 +100,18 @@ const testConnection = async (retries = 3, delay = 2000) => {
   return false;
 };
 
-// Test connection on startup
+// Test database connection on application startup
 testConnection();
 
-// Helper function to execute queries
+/**
+ * Execute a SQL query with parameters
+ * Uses prepared statements to prevent SQL injection
+ * 
+ * @param {string} sql - SQL query string with placeholders (?)
+ * @param {Array} params - Array of parameter values to bind to placeholders
+ * @returns {Promise<Array>} Query results array
+ * @throws {Error} If query execution fails
+ */
 const query = async (sql, params = []) => {
   try {
     const [results] = await pool.execute(sql, params);
@@ -99,7 +129,15 @@ const query = async (sql, params = []) => {
   }
 };
 
-// Helper function to get a single row
+/**
+ * Execute a SQL query and return a single row
+ * Convenience function for queries that expect exactly one result
+ * 
+ * @param {string} sql - SQL query string with placeholders (?)
+ * @param {Array} params - Array of parameter values to bind to placeholders
+ * @returns {Promise<Object|null>} First row from results, or null if no results
+ * @throws {Error} If query execution fails
+ */
 const queryOne = async (sql, params = []) => {
   const results = await query(sql, params);
   return results.length > 0 ? results[0] : null;

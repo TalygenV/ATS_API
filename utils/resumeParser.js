@@ -1,3 +1,8 @@
+// Resume Parser Utility
+// This module handles text extraction from resume files and parsing using AI
+// Supports multiple file formats: PDF, DOC, DOCX, and TXT
+// Uses Groq AI for resume parsing with retry logic for reliability
+
 // const groq = require('../config/groq');
 const { getGroqClient } = require('../config/groq')
 const pdfParse = require('pdf-parse');
@@ -5,6 +10,7 @@ const PDFParser = require('pdf2json');
 const mammoth = require('mammoth');
 const fs = require('fs').promises;
 
+// Legacy implementation - simple text extraction without fallback
 // async function extractTextFromFile(filePath, mimetype) {
 //   try {
 //     if (mimetype === 'application/pdf') {
@@ -27,6 +33,15 @@ const fs = require('fs').promises;
 //   }
 // }
 
+/**
+ * Extract text content from a resume file
+ * Supports PDF, DOC, DOCX, and TXT file formats
+ * 
+ * @param {string} filePath - Path to the resume file
+ * @param {string} mimetype - MIME type of the file
+ * @returns {Promise<string>} Extracted text content from the file
+ * @throws {Error} If file type is unsupported or extraction fails
+ */
 async function extractTextFromFile(filePath, mimetype) {
   try {
     if (mimetype === 'application/pdf') {
@@ -52,14 +67,23 @@ async function extractTextFromFile(filePath, mimetype) {
   }
 }
 
+/**
+ * Extract text from PDF file buffer
+ * Uses pdf-parse as primary method, falls back to pdf2json if needed
+ * This dual-approach handles various PDF formats and encoding issues
+ * 
+ * @param {Buffer} dataBuffer - PDF file buffer
+ * @returns {Promise<string>} Extracted text from PDF
+ * @throws {Error} If both parsing methods fail
+ */
 async function extractTextFromPDF(dataBuffer) {
   try {
-    // Try pdf-parse first
+    // Try pdf-parse first - faster and more reliable for most PDFs
     return (await pdfParse(dataBuffer)).text;
   } catch (err) {
     console.warn("pdf-parse failed, retrying with pdf2json...", err.message);
 
-    // Fallback: pdf2json
+    // Fallback: pdf2json - handles PDFs that pdf-parse cannot process
     return new Promise((resolve, reject) => {
       const pdfParser = new PDFParser();
 
@@ -84,7 +108,17 @@ async function extractTextFromPDF(dataBuffer) {
   }
 }
 
-// Helper function to retry API calls with exponential backoff
+/**
+ * Retry function with exponential backoff
+ * Retries failed API calls with increasing delays between attempts
+ * Only retries on network errors, not on API errors (400, 401, 403, etc.)
+ * 
+ * @param {Function} fn - Async function to retry
+ * @param {number} maxRetries - Maximum number of retry attempts (default: 3)
+ * @param {number} baseDelay - Base delay in milliseconds (default: 1000)
+ * @returns {Promise<*>} Result from the function if successful
+ * @throws {Error} Last error if all retries fail
+ */
 async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
   let lastError;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -92,6 +126,7 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
       return await fn();
     } catch (error) {
       lastError = error;
+      // Check if error is a network-related error (retryable)
       const isNetworkError = error.message && (
         error.message.includes('fetch failed') ||
         error.message.includes('ECONNRESET') ||
@@ -105,21 +140,31 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
         throw error;
       }
       
+      // Exponential backoff: delay doubles with each attempt
       const delay = baseDelay * Math.pow(2, attempt - 1);
-      console.log(`   ⚠️  Attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
   throw lastError;
 }
 
+/**
+ * Parse resume text using Groq AI
+ * Extracts structured data from resume text including personal info, skills, experience, education
+ * Uses Groq's llama-3.1-8b-instant model for fast and accurate parsing
+ * 
+ * @param {string} resumeText - Full text content extracted from resume file
+ * @param {string} fileName - Original filename of the resume
+ * @returns {Promise<Object>} Parsed resume data with structured fields
+ * @throws {Error} If resume text is invalid or parsing fails
+ */
 async function parseResumeWithGroq(resumeText, fileName) {
-  // Validate input
+  // Validate input - ensure we have valid text to parse
   if (!resumeText || typeof resumeText !== 'string' || resumeText.trim().length === 0) {
     throw new Error('Resume text is empty or invalid. Cannot parse empty resume.');
   }
 
-  // Using Groq's llama-3.1-8b-instant model
+  // Using Groq's llama-3.1-8b-instant model for fast resume parsing
   const modelName = 'llama-3.1-8b-instant';
   
   const prompt = `You are a resume parser. Parse the following resume text and extract all relevant information. You MUST return ONLY a valid JSON object with no additional text, explanations, or markdown formatting.
@@ -171,7 +216,6 @@ Return ONLY the JSON object, nothing else.`;
   
   try {
     const groq = await getGroqClient();
-    console.log(`   🔄 Using Groq model: ${modelName}`);
     
     // Retry API call with exponential backoff
     const result = await retryWithBackoff(async () => {
@@ -194,7 +238,6 @@ Return ONLY the JSON object, nothing else.`;
     }, 3, 2000);
     
     const text = result.choices[0]?.message?.content || '';
-    console.log(`   ✅ Got response from ${modelName}`);
 
     // Validate that we received a response
     if (!text || text.trim().length === 0) {
@@ -210,7 +253,7 @@ Return ONLY the JSON object, nothing else.`;
         lowerText.startsWith('unable') ||
         lowerText.startsWith('error') ||
         (!text.includes('{') && !text.includes('['))) {
-      console.error(`   ❌ Non-JSON response detected: ${text.substring(0, 200)}`);
+      console.error(`     Non-JSON response detected: ${text.substring(0, 200)}`);
       throw new Error(`Groq API returned a non-JSON response. The model may not have received valid resume text. Response preview: ${text.substring(0, 200)}`);
     }
 
@@ -228,7 +271,6 @@ Return ONLY the JSON object, nothing else.`;
       // Remove any text before the first opening brace (common issue: "However, y..." or "Here is the JSON:")
       const firstBraceIndex = jsonText.indexOf('{');
       if (firstBraceIndex > 0) {
-        console.log(`   ⚠️  Found text before JSON, removing ${firstBraceIndex} characters`);
         jsonText = jsonText.substring(firstBraceIndex);
       }
       
@@ -314,8 +356,8 @@ Return ONLY the JSON object, nothing else.`;
         parsedData = JSON.parse(jsonText);
       } catch (parseError) {
         // Log the problematic JSON for debugging
-        console.error(`   ❌ JSON Parse Error: ${parseError.message}`);
-        console.error(`   ❌ JSON text length: ${jsonText.length}`);
+        console.error(`     JSON Parse Error: ${parseError.message}`);
+        console.error(`     JSON text length: ${jsonText.length}`);
         
         // Extract position from error message if available
         const positionMatch = parseError.message.match(/position (\d+)/);
@@ -323,16 +365,16 @@ Return ONLY the JSON object, nothing else.`;
           const position = parseInt(positionMatch[1]);
           const start = Math.max(0, position - 100);
           const end = Math.min(jsonText.length, position + 100);
-          console.error(`   ❌ Context around error position ${position}:`);
+          console.error(`     Context around error position ${position}:`);
           console.error(`   ${jsonText.substring(start, end)}`);
           console.error(`   ${' '.repeat(Math.min(100, position - start))}^`);
         } else {
-          console.error(`   ❌ JSON preview (first 500 chars): ${jsonText.substring(0, 500)}`);
+          console.error(`     JSON preview (first 500 chars): ${jsonText.substring(0, 500)}`);
         }
         
         // Also log the last 200 chars in case the issue is at the end
         if (jsonText.length > 500) {
-          console.error(`   ❌ JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
+          console.error(`     JSON ending (last 200 chars): ${jsonText.substring(jsonText.length - 200)}`);
         }
         
         throw new Error(`Failed to parse JSON response: ${parseError.message}. Response may contain invalid characters.`);
@@ -345,23 +387,26 @@ Return ONLY the JSON object, nothing else.`;
 
     // Post-process and validate data
     parsedData = validateAndCleanData(parsedData);
-    
-    console.log(`   ✅ Successfully parsed resume with ${modelName}`);
 
     return parsedData;
   } catch (error) {
     lastError = error;
     const errorMsg = error.message || 'Unknown error';
-    console.error(`   ❌ Error parsing resume with Groq: ${errorMsg}`);
+    console.error(`     Error parsing resume with Groq: ${errorMsg}`);
     throw new Error(`Error parsing resume with Groq: ${errorMsg}. Please check your API key and network connection.`);
   }
 }
 
 /**
  * Validate and clean parsed resume data
+ * Ensures data types are correct and fills in missing fields with defaults
+ * Handles edge cases like array locations, missing name parts, etc.
+ * 
+ * @param {Object} parsedData - Raw parsed data from AI
+ * @returns {Object} Validated and cleaned resume data
  */
 function validateAndCleanData(parsedData) {
-  // Validate and format total_experience
+  // Validate and format total_experience - ensure it's a valid number
   if (parsedData.total_experience !== null && parsedData.total_experience !== undefined) {
     const exp = parseFloat(parsedData.total_experience);
     if (!isNaN(exp) && exp >= 0) {

@@ -212,8 +212,8 @@ router.get('/', authenticate, async (req, res) => {
     const joinCondition = isInterviewer ? 'INNER' : 'LEFT';
     /*
       If interviewer:
-      1️⃣ ce JOIN → interviewer-specific candidates
-      2️⃣ WHERE → job assigned to interviewer
+      1. ce JOIN → interviewer-specific candidates
+      2. WHERE → job assigned to interviewer
     */
     const interviewerJoin = isInterviewer
       ? ' AND id.interviewer_id = ?'
@@ -335,7 +335,7 @@ SELECT
   AS totalPending
 
 FROM job_descriptions jd
-RIGHT JOIN candidate_evaluations ce
+LEFT JOIN candidate_evaluations ce
   ON ce.job_description_id = jd.id
 
 ${joinCondition} JOIN interview_details id
