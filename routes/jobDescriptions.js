@@ -383,6 +383,161 @@ ORDER BY jd.created_at DESC
   }
 });
 
+router.get('/', authenticate, async (req, res) => {
+  try {
+    const interviewTimeSlot = Number(process.env.INTERVIEW_TIME_SLOT || 30);
+    const isInterviewer = req.user.role === 'Interviewer';
+
+    const params = [];
+
+    /*
+      PARAM ORDER (VERY IMPORTANT)
+
+      Query B (zero-candidate jobs):
+        1) isInterviewer flag (0 / 1)
+        2) interviewerId (or NULL)
+    */
+
+    params.push(isInterviewer ? 1 : 0);
+    params.push(isInterviewer ? req.user.id : null);
+
+    const sql = `
+WITH latest_resumes AS (
+  SELECT r1.id
+  FROM resumes r1
+  JOIN (
+    SELECT 
+      COALESCE(parent_id, id) AS root_id,
+      MAX(version_number) AS max_version
+    FROM resumes
+    GROUP BY COALESCE(parent_id, id)
+  ) x
+    ON x.root_id = COALESCE(r1.parent_id, r1.id)
+   AND x.max_version = r1.version_number
+)
+
+SELECT *
+FROM (
+
+  /* ===================== QUERY A : JOBS WITH CANDIDATES ===================== */
+
+  SELECT 
+    jd.*,
+
+    COUNT(DISTINCT lr.id) AS resume_count,
+
+    COUNT(DISTINCT CASE WHEN ce.status = 'accepted' THEN ce.email END) AS accepted,
+    COUNT(DISTINCT CASE WHEN ce.status = 'pending' THEN ce.email END) AS pending,
+    COUNT(DISTINCT CASE WHEN ce.status = 'rejected' THEN ce.email END) AS rejected,
+
+    COUNT(DISTINCT CASE 
+      WHEN lr.id IS NOT NULL AND ce.hr_final_status = 'on_hold'
+      THEN ce.email END
+    ) AS onhold,
+
+    COUNT(DISTINCT CASE 
+      WHEN lr.id IS NOT NULL AND ce.hr_final_status = 'rejected'
+      THEN ce.email END
+    ) AS finalRejected,
+
+    COUNT(DISTINCT CASE 
+      WHEN lr.id IS NOT NULL AND ce.hr_final_status = 'selected'
+      THEN ce.email END
+    ) AS finalSelected,
+
+    COUNT(DISTINCT CASE 
+      WHEN lr.id IS NOT NULL
+       AND ce.hr_final_status = 'pending'
+       AND its.start_time IS NOT NULL
+       AND UTC_TIMESTAMP() >
+           DATE_ADD(its.start_time, INTERVAL ${interviewTimeSlot} MINUTE)
+      THEN ce.email END
+    ) AS totalDecisionPending,
+
+    COUNT(DISTINCT CASE 
+      WHEN lr.id IS NOT NULL
+       AND its.start_time IS NOT NULL
+       AND id.interviewer_feedback IS NULL
+       AND its.start_time > UTC_TIMESTAMP()
+       AND ce.hr_final_status NOT IN ('selected','rejected','on_hold')
+      THEN ce.email END
+    ) AS scheduledInterview,
+
+    COUNT(DISTINCT CASE 
+      WHEN its.start_time IS NULL
+      THEN ce.email END
+    ) AS totalPending
+
+  FROM job_descriptions jd
+  RIGHT JOIN candidate_evaluations ce
+    ON ce.job_description_id = jd.id
+  LEFT JOIN interview_details id
+    ON id.candidate_evaluations_id = ce.id
+  LEFT JOIN interviewer_time_slots its
+    ON its.id = id.interviewer_time_slots_id
+  LEFT JOIN latest_resumes lr
+    ON lr.id = ce.resume_id
+
+  GROUP BY jd.id
+
+  UNION ALL
+
+  /* ===================== QUERY B : JOBS WITH ZERO CANDIDATES ===================== */
+
+  SELECT
+    jd.*,
+    0 AS resume_count,
+    0 AS accepted,
+    0 AS pending,
+    0 AS rejected,
+    0 AS onhold,
+    0 AS finalRejected,
+    0 AS finalSelected,
+    0 AS totalDecisionPending,
+    0 AS scheduledInterview,
+    0 AS totalPending
+
+  FROM job_descriptions jd
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM candidate_evaluations ce
+    WHERE ce.job_description_id = jd.id
+  )
+  AND (
+    ? = 0
+    OR JSON_CONTAINS(jd.interviewers, JSON_QUOTE(?))
+  )
+
+) result
+ORDER BY result.created_at DESC
+`;
+
+    const rows = await query(sql, params);
+
+    const data = rows.map(jd => ({
+      ...jd,
+      interviewers: jd.interviewers ? JSON.parse(jd.interviewers) : [],
+      resume_count: Number(jd.resume_count) || 0
+    }));
+
+    res.json({
+      success: true,
+      count: data.length,
+      data
+    });
+
+  } catch (error) {
+    console.error('Error fetching job descriptions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch job descriptions',
+      error: error.message
+    });
+  }
+});
+
+
+
 
 
 
