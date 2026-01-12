@@ -916,8 +916,8 @@ router.post('/:token/book-slot', async (req, res) => {
     // Notify interviewer
     if (slot.interviewer_email) {
       await sendInterviewAssignmentToInterviewer({
-          // interviewerEmail: interviewer.email,
-        interviewerEmail : 'ssrivastav@zorbis.com',
+          interviewerEmail: slot.interviewer_email,
+        // interviewerEmail : 'ssrivastav@zorbis.com',
         meetingId : interviewLink.meeting_id,
         meetingPassword : interviewLink.password,
         interviewerName: slot.interviewer_name || slot.interviewer_email,
@@ -933,7 +933,7 @@ router.post('/:token/book-slot', async (req, res) => {
     // Notify candidate
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
-         candidateEmail : 'ssrivastav@cogniter.com',
+         candidateEmail ,
           meetingId : interviewLink.meeting_id,
         meetingPassword : interviewLink.password,
         candidateName,
@@ -1015,21 +1015,21 @@ router.post('/:token/book-slot', async (req, res) => {
           
           </html>
         `;
-        sendEmail({
-          to: 'schamoli@cogniter.com',
-          subject,
-          html
-        })
+        // sendEmail({
+        //   to: 'schamoli@cogniter.com',
+        //   subject,
+        //   html
+        // })
        // uncomment to send email to all hr and admin
-        // await Promise.all(
-        //   hrAdminEmails.map(email =>
-        //     sendEmail({
-        //       to: email,
-        //       subject,
-        //       html
-        //     })
-        //   )
-        // );
+        await Promise.all(
+          hrAdminEmails.map(email =>
+            sendEmail({
+              to: email,
+              subject,
+              html
+            })
+          )
+        );
       }
     } catch (notifyError) {
       console.error('Error sending HR/Admin self-schedule emails:', notifyError);

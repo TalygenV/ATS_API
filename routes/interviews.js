@@ -153,8 +153,8 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
  // Send to interviewer
     if (interviewer.email) {
       await sendInterviewAssignmentToInterviewer({
-        // interviewerEmail: interviewer.email,
-        interviewerEmail : 'ssrivastav@zorbis.com',
+        interviewerEmail: interviewer.email,
+        // interviewerEmail : 'ssrivastav@zorbis.com',
          meetingId : interviewLink.meeting_id,
         meetingPassword : interviewLink.password,
         interviewerName: interviewer.full_name || interviewer.email,
@@ -170,7 +170,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     // Send to candidate
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
-        candidateEmail : 'ssrivastav@cogniter.com',
+        candidateEmail ,
          meetingId : interviewLink.meeting_id,
         meetingPassword : interviewLink.password,
         candidateName,
@@ -298,22 +298,22 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
           </html>
         `;
 
-        sendEmail({
-          to: 'ssrivastav@cogniter.com',
-          subject,
-          html
-        })
+        // sendEmail({
+        //   to: 'ssrivastav@cogniter.com',
+        //   subject,
+        //   html
+        // })
      
         // uncomment to send email to all hr and admin
-        // await Promise.all(
-        //   hrAdminEmails.map(email =>
-        //     sendEmail({
-        //       to: email,
-        //       subject,
-        //       html
-        //     })
-        //   )
-        // );
+        await Promise.all(
+          hrAdminEmails.map(email =>
+            sendEmail({
+              to: email,
+              subject,
+              html
+            })
+          )
+        );
       }
     } catch (notifyError) {
       console.error('Error sending HR/Admin schedule emails:', notifyError);
@@ -476,8 +476,8 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     // Send to interviewer
     if (interviewer.email) {
       await sendInterviewAssignmentToInterviewer({
-        // interviewerEmail: interviewer.email,
-        interviewerEmail : 'ssrivastav@zorbis.com',
+        interviewerEmail: interviewer.email,
+        // interviewerEmail : 'ssrivastav@zorbis.com',
          meetingId : interviewLink.meeting_id,
         meetingPassword : interviewLink.password,
         interviewerName: interviewer.full_name || interviewer.email,
@@ -493,7 +493,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     // Send to candidate
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
-        candidateEmail : 'ssrivastav@cogniter.com',
+        candidateEmail,
          meetingId : interviewLink.meeting_id,
         meetingPassword : interviewLink.password,
         candidateName,
@@ -620,21 +620,21 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
           </html>
         `;
 
-        sendEmail({
-          to: 'ssrivastav@cogniter.com',
-          subject,
-          html
-        })
+        // sendEmail({
+        //   to: 'ssrivastav@cogniter.com',
+        //   subject,
+        //   html
+        // })
          // uncomment to send email to all hr and admin
-        // await Promise.all(
-        //   hrAdminEmails.map(email =>
-        //     sendEmail({
-        //       to: email,
-        //       subject,
-        //       html
-        //     })
-        //   )
-        // );
+        await Promise.all(
+          hrAdminEmails.map(email =>
+            sendEmail({
+              to: email,
+              subject,
+              html
+            })
+          )
+        );
       }
     } catch (notifyError) {
       console.error('Error sending HR/Admin reschedule emails:', notifyError);
@@ -1450,8 +1450,8 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
         const slotDate = slot ? fromUTCString(slot.start_time) : fromUTCString(interviewDateUTC);
         
         await sendInterviewAssignmentToInterviewer({
-          // interviewerEmail: interviewer.email,
-          interviewerEmail: 'ssrivastav@zorbis.com',
+          interviewerEmail: interviewer.email,
+          // interviewerEmail: 'ssrivastav@zorbis.com',
            meetingId : interviewLink.meeting_id,
         meetingPassword : interviewLink.password,
           interviewerName: interviewer.full_name || interviewer.email,
@@ -1469,7 +1469,7 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
     if (candidateEmail) {
       const interviewerNames = interviewers.map(i => i.full_name || i.email).join(', ');
       await sendInterviewAssignmentToCandidate({
-        candidateEmail: 'ssrivastav@cogniter.com',
+        candidateEmail,
          meetingId : interviewLink.meeting_id,
         meetingPassword : interviewLink.password,
         candidateName,
@@ -1554,21 +1554,21 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
           </html>
         `;
 
-        sendEmail({
-          to: 'ssrivastav@cogniter.com',
-          subject,
-          html
-        })
+        // sendEmail({
+        //   to: 'ssrivastav@cogniter.com',
+        //   subject,
+        //   html
+        // })
         // uncomment to send email to all hr and admin
-        // await Promise.all(
-        //   hrAdminEmails.map(email =>
-        //     sendEmail({
-        //       to: email,
-        //       subject,
-        //       html
-        //     })
-        //   )
-        // );
+        await Promise.all(
+          hrAdminEmails.map(email =>
+            sendEmail({
+              to: email,
+              subject,
+              html
+            })
+          )
+        );
       }
     } catch (notifyError) {
       console.error('Error sending HR/Admin bulk schedule emails:', notifyError);
