@@ -134,7 +134,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
   } else {
        await query(
       `UPDATE candidate_evaluations 
-       SET interview_start_url = '', interview_join_url = '', is_video_call = ?
+       SET interview_start_url = NULL, interview_join_url = NULL, is_video_call = ?
        WHERE id = ?`,
       [is_video_call, evaluation_id]
     );
@@ -471,7 +471,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
   } else { 
           await query(
       `UPDATE candidate_evaluations 
-       SET interview_start_url = '', interview_join_url = '', is_video_call = ?
+       SET interview_start_url = NULL, interview_join_url = NULL, is_video_call = ?
        WHERE id = ?`,
       [is_video_call, evaluation_id]
     );
@@ -1422,7 +1422,7 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
       
        await query(
       `UPDATE candidate_evaluations 
-       SET interview_start_url = '', interview_join_url = '', is_video_call = ?
+       SET interview_start_url = NULL, interview_join_url = NULL, is_video_call = ?
        WHERE id = ?`,
       [is_video_call, evaluation_id]
     );
