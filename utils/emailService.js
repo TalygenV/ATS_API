@@ -135,7 +135,7 @@ async function sendInterviewAssignmentToInterviewer({
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
             <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
   </p>
- ${interViewLink ? `}
+ ${interViewLink ? `
   <p>
     <strong> Start Meeting Link:</strong><br/>
     <a href="${interViewLink || '#'}" target="_blank">
@@ -267,7 +267,7 @@ async function sendInterviewAssignmentToCandidate({
     <strong>Time:</strong> ${formattedTime} (IST)
   </p>
 
-  ${interviewLink ? `}
+  ${interviewLink ? `
   <p>
     <strong> Meeting Link:</strong><br/>
     <a href="${interviewLink || '#'}" target="_blank">
