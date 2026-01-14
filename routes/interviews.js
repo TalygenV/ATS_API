@@ -15,7 +15,7 @@ const router = express.Router();
 // Assign interviewer to a candidate evaluation (HR/Admin only)
 router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
   try {
-    const { evaluation_id, interviewer_id, interview_date, slot_id } = req.body;
+    const { evaluation_id, interviewer_id, interview_date, slot_id , is_video_call } = req.body;
 
     if (!evaluation_id || !interviewer_id || (!interview_date && !slot_id)) {
       return res.status(400).json({
@@ -116,7 +116,9 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
    
 
     // Generate interview link
-    const interviewLink = await generateInterViewLink({
+    let interviewLink = null;
+    if(is_video_call == true){
+     interviewLink = await generateInterViewLink({
       topic: "INTERVIEW",
       start_time: interviewDateUTC,
       duration: process.env.INTERVIEW_TIME_SLOT,
@@ -125,10 +127,19 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     // Update candidate_evaluations with interview links (shared link for all interviewers)
     await query(
       `UPDATE candidate_evaluations 
-       SET interview_start_url = ?, interview_join_url = ?
+       SET interview_start_url = ?, interview_join_url = ?, is_video_call = ?
        WHERE id = ?`,
-      [interviewLink.start_url, interviewLink.join_url, evaluation_id]
+      [interviewLink.start_url, interviewLink.join_url, is_video_call, evaluation_id]
     );
+  } else {
+       await query(
+      `UPDATE candidate_evaluations 
+       SET interview_start_url = '', interview_join_url = '', is_video_call = ?
+       WHERE id = ?`,
+      [is_video_call, evaluation_id]
+    );
+  }
+
 
     // Create assignment record (convert to UTC)
     const assignmentNote = oldInterviewDetails.length > 0 ? 'Reassigned' : null;
@@ -153,17 +164,18 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
  // Send to interviewer
     if (interviewer.email) {
       await sendInterviewAssignmentToInterviewer({
+         
         interviewerEmail: interviewer.email,
         // interviewerEmail : 'ssrivastav@zorbis.com',
-         meetingId : interviewLink.meeting_id,
-        meetingPassword : interviewLink.password,
+         meetingId : interviewLink?.meeting_id,
+        meetingPassword : interviewLink?.password,
         interviewerName: interviewer.full_name || interviewer.email,
         candidateName,
         candidateEmail,
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
-        interViewLink : interviewLink.start_url,
-        interViewJoinLink : interviewLink.join_url  
+        interViewLink : interviewLink?.start_url,
+        interViewJoinLink : interviewLink?.join_url  
       });
     }
 
@@ -171,13 +183,13 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
         candidateEmail ,
-         meetingId : interviewLink.meeting_id,
-        meetingPassword : interviewLink.password,
+         meetingId : interviewLink?.meeting_id,
+        meetingPassword : interviewLink?.password,
         candidateName,
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
         interviewerName: interviewer.full_name || interviewer.email,
-         interviewLink : interviewLink.join_url
+         interviewLink : interviewLink?.join_url
       });
     }
 
@@ -265,24 +277,28 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
             <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
   </p>
 
-  <p>
+  ${is_video_call ? `<p>
     <strong> Start Meeting Link:</strong><br/>
-    <a href="${interviewLink.start_url || '#'}" target="_blank">
+    <a href="${interviewLink?.start_url || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Start  Meeting</button>
     </a>
-  </p>
+  </p>` : ''}
 
+
+  ${is_video_call ? `
     <p>
     <strong> Join Meeting Link:</strong><br/>
-    <a href="${interviewLink.join_url || '#'}" target="_blank">
+    <a href="${interviewLink?.join_url || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Join Meeting</button>
     </a>
-  </p>
+  </p>` : ''}
 
+  ${is_video_call ? `
    <p>
-    <strong>Meeting ID:</strong> ${interviewLink.meeting_id || 'N/A'}<br/>
-    <strong>Passcode:</strong> ${interviewLink.password || 'N/A'}
+    <strong>Meeting ID:</strong> ${interviewLink?.meeting_id || 'N/A'}<br/>
+    <strong>Passcode:</strong> ${interviewLink?.password || 'N/A'}
   </p>
+` : ''}
 
   <br/>
 
@@ -338,7 +354,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
 router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (req, res) => {
   try {
     const { evaluation_id } = req.params;
-    const { interviewer_id, interview_date, slot_id } = req.body;
+    const { interviewer_id, interview_date, slot_id , is_video_call } = req.body;
 
     if (!interviewer_id || (!interview_date && !slot_id)) {
       return res.status(400).json({
@@ -436,9 +452,10 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     // Convert interview date to UTC
     const interviewDateUTC = toUTCString(finalInterviewDate);
 
-      
+     let interviewLink = null; 
     // Generate interview link
-    const interviewLink = await generateInterViewLink({
+    if(is_video_call == true){  
+      interviewLink = await generateInterViewLink({
       topic: "INTERVIEW",
       start_time: interviewDateUTC,
       duration: process.env.INTERVIEW_TIME_SLOT,
@@ -447,10 +464,18 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     // Update candidate_evaluations with interview links (shared link for all interviewers)
     await query(
       `UPDATE candidate_evaluations 
-       SET interview_start_url = ?, interview_join_url = ?
+       SET interview_start_url = ?, interview_join_url = ? , is_video_call = ?
        WHERE id = ?`,
-      [interviewLink.start_url, interviewLink.join_url, evaluation_id]
+      [interviewLink.start_url, interviewLink.join_url, is_video_call, evaluation_id]
     );
+  } else { 
+          await query(
+      `UPDATE candidate_evaluations 
+       SET interview_start_url = '', interview_join_url = '', is_video_call = ?
+       WHERE id = ?`,
+      [is_video_call, evaluation_id]
+    );
+    }
 
     // Step 4: Create new assignment record (convert to UTC)
     const assignmentNote = oldInterviewDetails.length > 0 ? 'Reassigned' : 'Assigned';
@@ -478,29 +503,29 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
       await sendInterviewAssignmentToInterviewer({
         interviewerEmail: interviewer.email,
         // interviewerEmail : 'ssrivastav@zorbis.com',
-         meetingId : interviewLink.meeting_id,
-        meetingPassword : interviewLink.password,
+         meetingId : interviewLink?.meeting_id,
+        meetingPassword : interviewLink?.password,
         interviewerName: interviewer.full_name || interviewer.email,
         candidateName,
         candidateEmail,
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
-        interViewLink : interviewLink.start_url,
-         interViewJoinLink : interviewLink.join_url 
+        interViewLink : interviewLink?.start_url,
+         interViewJoinLink : interviewLink?.join_url 
       });
     }
 
     // Send to candidate
     if (candidateEmail) {
       await sendInterviewAssignmentToCandidate({
-        candidateEmail,
-         meetingId : interviewLink.meeting_id,
-        meetingPassword : interviewLink.password,
+        candidateEmail ,
+         meetingId : interviewLink?.meeting_id,
+        meetingPassword : interviewLink?.password,
         candidateName,
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
         interviewerName: interviewer.full_name || interviewer.email,
-         interviewLink : interviewLink.join_url
+         interviewLink : interviewLink?.join_url
       });
     }
 
@@ -585,25 +610,29 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
             <strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}<br>
             <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
   </p>
-
-  <p>
+ 
+  ${is_video_call ? `<p>
     <strong> Start Meeting Link:</strong><br/>
-    <a href="${interviewLink.start_url || '#'}" target="_blank">
+    <a href="${interviewLink?.start_url || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Start  Meeting</button>
     </a>
-  </p>
+  </p>` : ''}
 
+
+  ${is_video_call ? `
     <p>
     <strong> Join Meeting Link:</strong><br/>
-    <a href="${interviewLink.join_url || '#'}" target="_blank">
+    <a href="${interviewLink?.join_url || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Join Meeting</button>
     </a>
-  </p>
+  </p>` : ''}
 
+  ${is_video_call ? `
    <p>
-    <strong>Meeting ID:</strong> ${interviewLink.meeting_id || 'N/A'}<br/>
-    <strong>Passcode:</strong> ${interviewLink.password || 'N/A'}
+    <strong>Meeting ID:</strong> ${interviewLink?.meeting_id || 'N/A'}<br/>
+    <strong>Passcode:</strong> ${interviewLink?.password || 'N/A'}
   </p>
+` : ''}
 
 
   <br/>
@@ -1302,7 +1331,7 @@ ORDER BY start_time;
 
 router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) => {
 
-    const { evaluation_id, interviewer_ids, interview_date, slot_ids } = req.body;
+    const { evaluation_id, interviewer_ids, interview_date, slot_ids , is_video_call } = req.body;
 
     // Validate input
     if (
@@ -1374,19 +1403,32 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
     const interviewDateUTC = toUTCString(interview_date);
 
     // Generate interview link
-    const interviewLink = await generateInterViewLink({
+    let interviewLink = null;
+
+    if(is_video_call){
+     interviewLink = await generateInterViewLink({
       topic: "INTERVIEW",
       start_time: interviewDateUTC,
       duration: process.env.INTERVIEW_TIME_SLOT,
     });
-
-    // Update candidate_evaluations with interview links
+        // Update candidate_evaluations with interview links
     await query(
       `UPDATE candidate_evaluations 
-       SET interview_start_url = ?, interview_join_url = ?
+       SET interview_start_url = ?, interview_join_url = ? , is_video_call = ?
        WHERE id = ?`,
-      [interviewLink.start_url, interviewLink.join_url, evaluation_id]
+      [interviewLink.start_url, interviewLink.join_url, is_video_call, evaluation_id]
     );
+  } else {
+      
+       await query(
+      `UPDATE candidate_evaluations 
+       SET interview_start_url = '', interview_join_url = '', is_video_call = ?
+       WHERE id = ?`,
+      [is_video_call, evaluation_id]
+    );
+  }
+
+
 
     // Create assignment records and interview details
     const assignmentNote = oldInterviewDetails.length > 0 ? 'Bulk reassignment' : 'Bulk assignment';
@@ -1450,17 +1492,17 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
         const slotDate = slot ? fromUTCString(slot.start_time) : fromUTCString(interviewDateUTC);
         
         await sendInterviewAssignmentToInterviewer({
-          interviewerEmail: interviewer.email,
+          interviewerEmail:interviewer.email,
           // interviewerEmail: 'ssrivastav@zorbis.com',
-           meetingId : interviewLink.meeting_id,
-        meetingPassword : interviewLink.password,
+           meetingId : interviewLink?.meeting_id,
+        meetingPassword : interviewLink?.password,
           interviewerName: interviewer.full_name || interviewer.email,
           candidateName,
           candidateEmail,
           jobTitle,
           interviewDate: slotDate,
-          interViewLink: interviewLink.start_url,
-           interViewJoinLink : interviewLink.join_url 
+          interViewLink: interviewLink?.start_url,
+           interViewJoinLink : interviewLink?.join_url 
         });
       }
     }
@@ -1469,14 +1511,14 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
     if (candidateEmail) {
       const interviewerNames = interviewers.map(i => i.full_name || i.email).join(', ');
       await sendInterviewAssignmentToCandidate({
-        candidateEmail,
-         meetingId : interviewLink.meeting_id,
-        meetingPassword : interviewLink.password,
+        candidateEmail ,
+         meetingId : interviewLink?.meeting_id,
+        meetingPassword : interviewLink?.password,
         candidateName,
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
         interviewerName: interviewerNames,
-        interviewLink: interviewLink.join_url
+        interviewLink: interviewLink?.join_url
       });
     }
 
@@ -1517,24 +1559,28 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
             <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
   </p>
 
-  <p>
+  ${is_video_call ? `<p>
     <strong> Start Meeting Link:</strong><br/>
-    <a href="${interviewLink.start_url || '#'}" target="_blank">
+    <a href="${interviewLink?.start_url || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Start  Meeting</button>
     </a>
-  </p>
+  </p>` : ''}
 
+
+  ${is_video_call ? `
     <p>
     <strong> Join Meeting Link:</strong><br/>
-    <a href="${interviewLink.join_url || '#'}" target="_blank">
+    <a href="${interviewLink?.join_url || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Join Meeting</button>
     </a>
-  </p>
+  </p>` : ''}
 
+  ${is_video_call ? `
    <p>
-    <strong>Meeting ID:</strong> ${interviewLink.meeting_id || 'N/A'}<br/>
-    <strong>Passcode:</strong> ${interviewLink.password || 'N/A'}
+    <strong>Meeting ID:</strong> ${interviewLink?.meeting_id || 'N/A'}<br/>
+    <strong>Passcode:</strong> ${interviewLink?.password || 'N/A'}
   </p>
+` : ''}
 
 
 
@@ -1600,6 +1646,7 @@ router.get('/today-avaiable-interviews', authenticate, requireWriteAccess, async
     ev.id AS evaluation_id,
     ev.candidate_name,
     ev.interview_start_url,
+    ev.is_video_call,
     jd.title,
     MIN(its.start_time) AS start_time,
     MIN(its.end_time) AS end_time,

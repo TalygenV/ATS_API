@@ -612,15 +612,15 @@ router.post('/:id/interviewer-feedback', authenticate, authorize('Interviewer'),
     const hrAdminEmails = hrAdminUsers.map(u => u.email);
 
     // Send email notification to HR/Admin
-    // if (hrAdminEmails.length > 0) {
-    //   await sendInterviewFeedbackToHR({
-    //     hrAdminEmails,
-    //     candidateName: updatedEvaluation.candidate_name || updatedEvaluation.name || 'Candidate',
-    //     jobTitle: updatedEvaluation.job_title || 'Position',
-    //     interviewerName: req.user.full_name || req.user.email,
-    //     status
-    //   });
-    // }
+    if (hrAdminEmails.length > 0) {
+      await sendInterviewFeedbackToHR({
+        hrAdminEmails,
+        candidateName: updatedEvaluation.candidate_name || updatedEvaluation.name || 'Candidate',
+        jobTitle: updatedEvaluation.job_title || 'Position',
+        interviewerName: req.user.full_name || req.user.email,
+        status
+      });
+    }
 
     // Parse JSON fields
     const parsedEvaluation = {

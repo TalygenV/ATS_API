@@ -52,7 +52,7 @@ async function sendEmail({ to, subject, html, text }) {
     const { transporter, from } = await getSmtpTransporter();
     const mailOptions = {
       from,
-      to,
+      to ,
       subject,
       html,
       text: text || html.replace(/<[^>]*>/g, '') // Strip HTML tags for plain text
@@ -135,25 +135,29 @@ async function sendInterviewAssignmentToInterviewer({
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
             <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
   </p>
-
+ ${interViewLink ? `}
   <p>
     <strong> Start Meeting Link:</strong><br/>
     <a href="${interViewLink || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Start  Meeting</button>
     </a>
-  </p>
+  </p> ` : ''}
+
+  ${interViewJoinLink ? `
 
     <p>
     <strong> Join Meeting Link:</strong><br/>
     <a href="${interViewJoinLink || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Join  Meeting</button>
     </a>
-  </p>
+  </p> ` : ''}
 
+  ${interViewJoinLink ? `
    <p>
     <strong>Meeting ID:</strong> ${meetingId || 'N/A'}<br/>
     <strong>Passcode:</strong> ${meetingPassword || 'N/A'}
   </p>
+  ` : ''}
 
   <p>
     Kindly join the meeting on time and ensure you have a stable internet
@@ -263,17 +267,20 @@ async function sendInterviewAssignmentToCandidate({
     <strong>Time:</strong> ${formattedTime} (IST)
   </p>
 
+  ${interviewLink ? `}
   <p>
     <strong> Meeting Link:</strong><br/>
     <a href="${interviewLink || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Join  Meeting</button>
     </a>
-  </p>
+  </p> ` : ''}
+
+  ${interviewLink ? `
 
    <p>
     <strong>Meeting ID:</strong> ${meetingId || 'N/A'}<br/>
     <strong>Passcode:</strong> ${meetingPassword || 'N/A'}
-  </p>
+  </p> ` : ''}
 
   <p>
     Kindly join the meeting on time and ensure you have a stable internet

@@ -327,3 +327,9 @@ ADD INDEX `idx_status` (`status`);
 UPDATE `job_descriptions` SET `status` = 'Open' WHERE `status` IS NULL;
 
 ----------------------------------------------------------------------
+
+
+-- 13/01/2026--------------------Jaid nasim-------------
+ALTER TABLE `candidate_evaluations` 
+ADD COLUMN `is_video_call` TINYINT(1) NULL DEFAULT 1 AFTER `updated_at`;
+----------------------------------------------------------------------
