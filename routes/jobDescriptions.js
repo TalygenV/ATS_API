@@ -401,6 +401,12 @@ router.get('/', authenticate, async (req, res) => {
     params.push(isInterviewer ? 1 : 0);
     params.push(isInterviewer ? req.user.id : null);
 
+    // for UNION query B
+params.push(isInterviewer ? 1 : 0);
+params.push(isInterviewer ? req.user.id : null);
+
+console.log('Params:', params, params.length);
+
     const sql = `
 WITH latest_resumes AS (
   SELECT r1.id
@@ -477,8 +483,17 @@ FROM (
     ON its.id = id.interviewer_time_slots_id
   LEFT JOIN latest_resumes lr
     ON lr.id = ce.resume_id
+ WHERE (
+  ? = 0
+  OR (
+    jd.interviewers IS NOT NULL
+    AND JSON_CONTAINS(jd.interviewers, JSON_QUOTE(?))
+  )
+)
+
 
   GROUP BY jd.id
+  
 
   UNION ALL
 
