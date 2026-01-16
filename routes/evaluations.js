@@ -826,7 +826,7 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
 //       WHERE ce.job_description_id = ?
 //     `;
   let sql = `
-  SELECT 
+  SELECT distinct
     ce.*,
   (
   SELECT COUNT(*)
@@ -938,13 +938,11 @@ const interviewerId = req.user.id;
     // First pass: group evaluations by email/name to find all versions
     for (const eval of parsedEvaluations) {
       const email = eval.email?.toLowerCase().trim() || eval.resume?.email?.toLowerCase().trim();
-      const name = eval.candidate_name?.toLowerCase().trim() || eval.resume?.name?.toLowerCase().trim();
+      //const name = eval.candidate_name?.toLowerCase().trim() || eval.resume?.name?.toLowerCase().trim();
       
       let groupKey = null;
       if (email) {
         groupKey = `email:${email}`;
-      } else if (name) {
-        groupKey = `name:${name}`;
       }
 
       if (groupKey) {
@@ -961,13 +959,11 @@ const interviewerId = req.user.id;
     
     for (const eval of parsedEvaluations) {
       const email = eval.email?.toLowerCase().trim() || eval.resume?.email?.toLowerCase().trim();
-      const name = eval.candidate_name?.toLowerCase().trim() || eval.resume?.name?.toLowerCase().trim();
+      //const name = eval.candidate_name?.toLowerCase().trim() || eval.resume?.name?.toLowerCase().trim();
       
       let groupKey = null;
       if (email) {
         groupKey = `email:${email}`;
-      } else if (name) {
-        groupKey = `name:${name}`;
       }
 
       if (groupKey && !processedKeys.has(groupKey)) {
@@ -1008,57 +1004,6 @@ const interviewerId = req.user.id;
             // duplicateCount: totalVersions - 1
           });
         }
-//         if (group && group.length > 1) {
-
-//   let selectedEval;
-
-//   if (isInterviewer) {
-//     // interviewer ke liye: usko assigned record hi lo
-//     const interviewerAssigned = group.filter(
-//       g => g.interviewer_id === interviewerId
-//     );
-
-//     if (interviewerAssigned.length > 0) {
-//       // agar multiple assigned ho to unme se latest
-//       selectedEval = interviewerAssigned.sort((a, b) => {
-//         const versionA = a.resume?.version_number || 1;
-//         const versionB = b.resume?.version_number || 1;
-//         return versionB - versionA;
-//       })[0];
-//     } else {
-//       // interviewer ka koi record nahi → skip
-//       processedKeys.add(groupKey);
-//       continue;
-//     }
-
-//   } else {
-//     // HR / Admin → global latest
-//     selectedEval = [...group].sort((a, b) => {
-//       const versionA = a.resume?.version_number || 1;
-//       const versionB = b.resume?.version_number || 1;
-//       if (versionB !== versionA) return versionB - versionA;
-
-//       const resumeDateA = new Date(a.resume?.created_at || a.created_at || 0);
-//       const resumeDateB = new Date(b.resume?.created_at || b.created_at || 0);
-//       return resumeDateB - resumeDateA;
-//     })[0];
-//   }
-
-//   processedEvaluations.push({
-//     ...selectedEval,
-//     isDuplicate: true,
-//     isVersion: !!selectedEval.resume?.parent_id,
-//     versionNumber: selectedEval.resume?.version_number || 1,
-//     parentId: selectedEval.resume?.parent_id || null,
-    
-//     // totalVersions: group.length,
-//     // duplicateCount: group.length - 1
-//       totalVersions: selectedEval.total_versions,
-//   duplicateCount: selectedEval.total_versions - 1
-//   });
-// }
-
-
          else if (group && group.length === 1) {
           // Only one version
           const eval = group[0];
