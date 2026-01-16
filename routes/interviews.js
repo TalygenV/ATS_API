@@ -36,6 +36,9 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
         error: 'Invalid interviewer ID, user is not an Interviewer, or interviewer is inactive'
       });
     }
+     
+
+
 
     // Get evaluation with candidate and job details
     const evaluation = await queryOne(
@@ -50,10 +53,41 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     );
 
     if (!evaluation) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
         error: 'Evaluation not found'
       });
+    }
+
+       // book and hold interview link 
+           // Generate interview link
+    let interviewLink = null;
+      let finalInterviewDate = interview_date;
+        if (slot_id) {
+      const slot = await queryOne(
+        `SELECT * FROM interviewer_time_slots 
+         WHERE id = ? AND interviewer_id = ? AND is_booked = 0`,
+        [slot_id, interviewer_id]
+      );
+         finalInterviewDate = slot.start_time;
+    }
+           // Convert interview date to UTC
+    const interviewDateUTC = toUTCString(finalInterviewDate);
+
+    if(is_video_call)
+    {
+        try {
+       interviewLink = await generateInterViewLink({
+      topic: "INTERVIEW",
+      start_time: interviewDateUTC,
+      duration: process.env.INTERVIEW_TIME_SLOT,
+    })
+        } catch (error) {
+            return res.status(200).json({
+        success: false,
+        error: 'Unable to generate interview link, please try again.'
+      });
+        }
     }
 
     // Step 1: Cancel old assignments - Get all existing interview_details for this evaluation
@@ -84,7 +118,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
       [evaluation_id]
     );
 
-    let finalInterviewDate = interview_date;
+ 
 
     // If HR selected a predefined slot, mark it booked and use its start_time
     if (slot_id) {
@@ -111,20 +145,12 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
       finalInterviewDate = slot.start_time;
     }
 
-    // Convert interview date to UTC
-    const interviewDateUTC = toUTCString(finalInterviewDate);
+
    
 
-    // Generate interview link
-    let interviewLink = null;
-    if(is_video_call == true){
-     interviewLink = await generateInterViewLink({
-      topic: "INTERVIEW",
-      start_time: interviewDateUTC,
-      duration: process.env.INTERVIEW_TIME_SLOT,
-    });
 
-    // Update candidate_evaluations with interview links (shared link for all interviewers)
+    if(is_video_call == true){
+// Update candidate_evaluations with interview links (shared link for all interviewers)
     await query(
       `UPDATE candidate_evaluations 
        SET interview_start_url = ?, interview_join_url = ?, is_video_call = ?
@@ -394,6 +420,37 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
         error: 'Evaluation not found'
       });
     }
+       let finalInterviewDate = interview_date;
+        if (slot_id) {
+      const slot = await queryOne(
+        `SELECT * FROM interviewer_time_slots 
+         WHERE id = ? AND interviewer_id = ? AND is_booked = 0`,
+        [slot_id, interviewer_id]
+      );
+         finalInterviewDate = slot.start_time;
+    }
+
+        let interviewLink = null;
+    
+           // Convert interview date to UTC
+    const interviewDateUTC = toUTCString(finalInterviewDate);
+
+    if(is_video_call)
+    {
+        try {
+       interviewLink = await generateInterViewLink({
+      topic: "INTERVIEW",
+      start_time: interviewDateUTC,
+      duration: process.env.INTERVIEW_TIME_SLOT,
+    })
+        } catch (error) {
+           console.error('Error generating interview link:', error);
+            return res.status(200).json({
+        success: false,
+        error: 'Unable to generate interview link, please try again.'
+      });
+        }
+    }
 
     // Step 1: Cancel old assignments - Get all existing interview_details for this evaluation
     const oldInterviewDetails = await query(
@@ -423,7 +480,6 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
       [evaluation_id]
     );
 
-    let finalInterviewDate = interview_date;
 
     if (slot_id) {
       const slot = await queryOne(
@@ -450,17 +506,12 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     }
 
     // Convert interview date to UTC
-    const interviewDateUTC = toUTCString(finalInterviewDate);
 
-     let interviewLink = null; 
+
+
     // Generate interview link
     if(is_video_call == true){  
-      interviewLink = await generateInterViewLink({
-      topic: "INTERVIEW",
-      start_time: interviewDateUTC,
-      duration: process.env.INTERVIEW_TIME_SLOT,
-    });
-
+      
     // Update candidate_evaluations with interview links (shared link for all interviewers)
     await query(
       `UPDATE candidate_evaluations 
@@ -1371,6 +1422,29 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
       });
     }
 
+
+        let interviewLink = null;
+       let finalInterviewDate = interview_date;
+           // Convert interview date to UTC
+    const interviewDateUTC = toUTCString(finalInterviewDate);
+
+    if(is_video_call)
+    {
+        try {
+       interviewLink = await generateInterViewLink({
+      topic: "INTERVIEW",
+      start_time: interviewDateUTC,
+      duration: process.env.INTERVIEW_TIME_SLOT,
+    })
+        } catch (error) {
+          console.error('Error generating interview link:', error);
+            return res.status(200).json({
+        success: false,
+        error: 'Unable to generate interview link, please try again.'
+      });
+        }
+    }
+
     // Step 1: Cancel old assignments - Get all existing interview_details for this evaluation
     const oldInterviewDetails = await query(
       `SELECT id, interviewer_time_slots_id 
@@ -1399,18 +1473,9 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
       [evaluation_id]
     );
 
-    // Convert interview date to UTC
-    const interviewDateUTC = toUTCString(interview_date);
 
-    // Generate interview link
-    let interviewLink = null;
 
     if(is_video_call){
-     interviewLink = await generateInterViewLink({
-      topic: "INTERVIEW",
-      start_time: interviewDateUTC,
-      duration: process.env.INTERVIEW_TIME_SLOT,
-    });
         // Update candidate_evaluations with interview links
     await query(
       `UPDATE candidate_evaluations 

@@ -76,7 +76,7 @@ router.post('/generate', async (req, res) => {
     const { job_description_id, candidate_name, candidate_email, expires_in_days } = req.body;
 
     if (!job_description_id) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'job_description_id is required'
       });
@@ -88,7 +88,7 @@ router.post('/generate', async (req, res) => {
     );
 
     if (!job) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
         error: 'Job description not found'
       });
@@ -364,7 +364,7 @@ router.get('/:token', async (req, res) => {
     );
 
     if (!link) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
         error: 'Invalid or expired link'
       });
@@ -760,7 +760,7 @@ router.post('/:token/book-slot', async (req, res) => {
     const { slot_id, evaluation_id } = req.body;
 
     if (!slot_id || !evaluation_id) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'slot_id and evaluation_id are required'
       });
@@ -772,7 +772,7 @@ router.post('/:token/book-slot', async (req, res) => {
     );
 
     if (!link || link.status === 'expired') {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'Invalid or expired link'
       });
@@ -783,7 +783,7 @@ router.post('/:token/book-slot', async (req, res) => {
       const expiresAt = fromUTCString(link.expires_at);
       const now = new Date();
       if (expiresAt && expiresAt < now) {
-        return res.status(410).json({
+        return res.status(200).json({
           success: false,
           error: 'This link has expired'
         });
@@ -805,7 +805,7 @@ router.post('/:token/book-slot', async (req, res) => {
     );
 
     if (!evaluation) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
         error: 'Evaluation not found or does not belong to this job post'
       });
@@ -820,7 +820,7 @@ router.post('/:token/book-slot', async (req, res) => {
     }
 
     if (Number(evaluation.overall_match) < 70) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'Slot selection is only allowed for candidates with score >= 70%'
       });
@@ -835,7 +835,7 @@ router.post('/:token/book-slot', async (req, res) => {
     );
 
     if (!slot) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
         error: 'Selected slot is no longer available'
       });
@@ -846,7 +846,7 @@ router.post('/:token/book-slot', async (req, res) => {
       try {
         const mappedInterviewers = JSON.parse(evaluation.interviewers) || [];
         if (mappedInterviewers.length > 0 && !mappedInterviewers.includes(slot.interviewer_id)) {
-          return res.status(400).json({
+          return res.status(200).json({
             success: false,
             error: 'Selected interviewer is not mapped to this job description'
           });
@@ -855,6 +855,20 @@ router.post('/:token/book-slot', async (req, res) => {
         // ignore parsing error, treat as no mapping
       }
     }
+     var interviewLink = null;
+        const interviewDateUTC = toUTCString(slot.start_time);
+      try {
+        interviewLink  = await generateInterViewLink({
+    topic: "INTERVIEW",
+    start_time: interviewDateUTC,
+    duration: process.env.INTERVIEW_TIME_SLOT,
+});
+      } catch (error) {
+         return res.status(200).json({
+        success: false,
+        error: 'Unable to generate interview link, please try again .'
+      })
+      }
 
     // Mark slot as booked
     const updateResult = await query(
@@ -865,14 +879,14 @@ router.post('/:token/book-slot', async (req, res) => {
     );
 
     if (updateResult.affectedRows === 0) {
-      return res.status(409).json({
+      return res.status(200).json({
         success: false,
         error: 'Slot was just booked by someone else. Please choose another slot.'
       });
     }
 
     // Update evaluation with interviewer and interview date (convert to UTC)
-    const interviewDateUTC = toUTCString(slot.start_time);
+ 
     // Determine a system user to record assignment (first Admin or HR)
     const systemUser = await queryOne(
       "SELECT id FROM users WHERE role IN ('Admin', 'HR') ORDER BY created_at ASC LIMIT 1"
@@ -892,11 +906,7 @@ router.post('/:token/book-slot', async (req, res) => {
     const jobTitle = evaluation.job_title || 'Position';
 
 
-          let interviewLink  = await generateInterViewLink({
-    topic: "INTERVIEW",
-    start_time: interviewDateUTC,
-    duration: process.env.INTERVIEW_TIME_SLOT,
-});
+
 
     // Update candidate_evaluations with interview links (shared for all interviewers)
     await query(
