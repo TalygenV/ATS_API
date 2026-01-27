@@ -436,7 +436,7 @@ router.get('/dashboard', async (req, res) => {
       query(`
         SELECT 
           jd.title,
-          AVG(TIMESTAMPDIFF(DAY, ce.created_at, ce.updated_at)) AS avg_days_to_decision
+          ROUND(AVG(TIMESTAMPDIFF(DAY, ce.created_at, ce.updated_at))) AS avg_days_to_decision
         FROM candidate_evaluations ce
         JOIN job_descriptions jd ON jd.id = ce.job_description_id
         WHERE ce.hr_final_status != 'pending' AND ce.hr_final_status IS NOT NULL
