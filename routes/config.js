@@ -476,5 +476,113 @@ router.delete('/groq/:id', authenticate, requireAdmin, async (req, res) => {
 });
 
 
+router.get('/kpi', authenticate, requireAdmin, async (req, res) => {
+  try {
+    // Get the most recent active Kpi setting
+    const processmetricstarget = await queryOne(
+      `SELECT  * FROM processmetricstarget where status = 'active' ORDER BY id desc Limit 1`
+    );
+
+    if (!processmetricstarget) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No Kpi settings found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: processmetricstarget
+    });
+  } catch (error) {
+    console.error('Error fetching Kpi settings:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch Kpi settings',
+      message: error.message
+    });
+  }
+});
+
+
+// Update Kpi settings (Admin only)
+router.put('/kpi', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const {
+      resumetoInterviewRate
+      ,averageMatchScore
+      ,interviewSlotUtilization
+      ,timetoDecision
+      ,candidateConversionRate
+
+    } = req.body;
+
+    // Validate required fields
+    if (!resumetoInterviewRate || !averageMatchScore || !interviewSlotUtilization || !timetoDecision || !candidateConversionRate ) {
+      return res.status(400).json({
+        success: false,
+        error: 'All fields are required'
+      });
+    }
+
+    // Check if there's an existing active setting
+    const existingSetting = await queryOne(
+      `SELECT id FROM processmetricstarget WHERE status = 'active' LIMIT 1`
+    );
+
+    if (existingSetting) {
+      // Deactivate the old setting
+      await query(
+        `UPDATE processmetricstarget SET status = 'inactive' WHERE id = ?`,
+        [existingSetting.id]
+      );
+    }
+
+    // Create new active setting
+    const result = await query(
+      `INSERT INTO processmetricstarget 
+       (resumetoInterviewRate
+      ,averageMatchScore
+      ,interviewSlotUtilization
+      ,timetoDecision
+      ,candidateConversionRate
+      ,status) 
+       VALUES (?, ?, ?, ?, ?, 'active')`,
+      [
+        resumetoInterviewRate,
+        averageMatchScore,
+        interviewSlotUtilization,
+        timetoDecision,
+        candidateConversionRate
+      ]
+    );
+
+    // Fetch the newly created setting
+    const newSetting = await queryOne(
+      `SELECT *
+       FROM processmetricstarget 
+       WHERE id = ?`,
+      [result.insertId]
+    );
+
+    res.json({
+      success: true,
+      data: newSetting,
+      message: 'Kpi settings updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating Kpi settings:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update Kpi settings',
+      message: error.message
+    });
+  }
+});
+
+
+
+
 
 module.exports = router;

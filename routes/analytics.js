@@ -392,7 +392,7 @@ router.get('/dashboard', async (req, res) => {
     const dateFilterCE = buildDateFilter(from_date, to_date, 'ce');
     const dateFilterR = buildDateFilter(from_date, to_date, 'r');
     const dateFilterITS = buildDateFilter(from_date, to_date, 'its');
-    
+    const hasDateRange = from_date && to_date;
     // For interview_details queries, we need to join with interviewer_time_slots
     const needsInterviewDetailsJoin = from_date || to_date;
     const interviewDetailsDateFilter = needsInterviewDetailsJoin 
@@ -411,7 +411,10 @@ router.get('/dashboard', async (req, res) => {
       interviewerStatusResult,
       slotUtilizationResult,
       resumeVolumeResult,
-      processMetricsResult
+      processMetricsResult,
+      growthStats,
+      recruitmentProcessMetricsKpi,
+      jobDescIndustryAvg
     ] = await Promise.all([
       query(`
         SELECT 
@@ -504,7 +507,41 @@ router.get('/dashboard', async (req, res) => {
         FROM candidate_evaluations ce
         LEFT JOIN interview_details id ON id.candidate_evaluations_id = ce.id
         ${dateFilterCE || ''}
-      `, dateParams)
+      `, dateParams),
+      hasDateRange ? queryOne(`
+        WITH current AS (
+          SELECT
+            COUNT(*) AS total_candidates,
+            SUM(ce.hr_final_status='selected') AS hired_candidates,
+            AVG(ce.overall_match) AS avg_match_score,
+            COUNT(*) AS interviews_conducted
+          FROM candidate_evaluations ce
+          WHERE ce.created_at BETWEEN ? AND ?
+        ),
+        previous AS (
+          SELECT
+            COUNT(*) AS total_candidates_prev,
+            SUM(ce.hr_final_status='selected') AS hired_candidates_prev,
+            AVG(ce.overall_match) AS avg_match_score_prev,
+            COUNT(*) AS interviews_conducted_prev
+          FROM candidate_evaluations ce
+          WHERE ce.created_at BETWEEN
+            DATE_SUB(?, INTERVAL DATEDIFF(?, ?) + 1 DAY)
+            AND DATE_SUB(?, INTERVAL 1 DAY)
+        )
+        SELECT
+          *,
+          CASE WHEN total_candidates_prev = 0 THEN NULL ELSE ROUND(((total_candidates - total_candidates_prev)/total_candidates_prev)*100,2) END AS total_candidates_growth_pct,
+          CASE WHEN hired_candidates_prev = 0 THEN NULL ELSE ROUND(((hired_candidates - hired_candidates_prev)/hired_candidates_prev)*100,2) END AS hired_candidates_growth_pct,
+          CASE WHEN avg_match_score_prev IS NULL OR avg_match_score_prev = 0 THEN NULL ELSE ROUND(((avg_match_score - avg_match_score_prev)/avg_match_score_prev)*100,2) END AS avg_match_score_growth_pct,
+          CASE WHEN interviews_conducted_prev = 0 THEN NULL ELSE ROUND(((interviews_conducted - interviews_conducted_prev)/interviews_conducted_prev)*100,2) END AS interviews_conducted_growth_pct
+        FROM current, previous
+      `, [
+        from_date, to_date,
+        from_date, to_date, from_date, from_date
+      ]) : null,
+      query(`SELECT  * FROM processmetricstarget where status = 'active' ORDER BY id desc Limit 1`),
+      query(`SELECT id, title,status,industryAvg FROM job_descriptions`)
     ]);
 
     // Process hiring funnel
@@ -569,7 +606,10 @@ router.get('/dashboard', async (req, res) => {
           total_parsed_resumes: parseInt(processMetricsResult.total_parsed_resumes) || 0,
           interviews_assigned: parseInt(processMetricsResult.interviews_assigned) || 0,
           interviews_not_assigned: parseInt(processMetricsResult.interviews_not_assigned) || 0
-        }
+        },
+        growthStats: growthStats || {},
+        recruitmentProcessMetricsKpi : recruitmentProcessMetricsKpi || {},
+        jobDescIndustryAvg :jobDescIndustryAvg ||{}
       }
     });
   } catch (error) {

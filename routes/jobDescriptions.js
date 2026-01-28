@@ -217,7 +217,7 @@ router.get('/:id', authenticate, async (req, res) => {
 // Create new job description (only HR and Admin can create)
 router.post('/', authenticate, requireWriteAccess, async (req, res) => {
   try {
-    const { title, description, requirements, interviewers, status } = req.body;
+    const { title, description, requirements, interviewers, status ,industryAvg} = req.body;
 
     if (!title || !description) {
       return res.status(400).json({
@@ -254,8 +254,8 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
     }
 
     const result = await query(
-      'INSERT INTO job_descriptions (title, description, requirements, interviewers, status) VALUES (?, ?, ?, ?, ?)',
-      [title.trim(), description.trim(), requirements ? requirements.trim() : null, interviewersJson, jobStatus]
+      'INSERT INTO job_descriptions (title, description, requirements, interviewers, status,industryAvg) VALUES (?, ?, ?, ?, ?,?)',
+      [title.trim(), description.trim(), requirements ? requirements.trim() : null, interviewersJson, jobStatus,industryAvg]
     );
 
     const jobDescription = await queryOne(
@@ -287,7 +287,7 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
 router.put('/:id', authenticate, requireWriteAccess, async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, requirements, interviewers, status } = req.body;
+    const { title, description, requirements, interviewers, status ,industryAvg} = req.body;
 
     if (!title || !description) {
       return res.status(400).json({
@@ -346,6 +346,10 @@ router.put('/:id', authenticate, requireWriteAccess, async (req, res) => {
     if (status !== undefined) {
       updateFields.push('status = ?');
       updateValues.push(status);
+    }
+    if (industryAvg !== undefined) {
+      updateFields.push('industryAvg = ?');
+      updateValues.push(industryAvg);
     }
 
     updateValues.push(id);

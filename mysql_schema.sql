@@ -333,3 +333,26 @@ UPDATE `job_descriptions` SET `status` = 'Open' WHERE `status` IS NULL;
 ALTER TABLE `candidate_evaluations` 
 ADD COLUMN `is_video_call` TINYINT(1) NULL DEFAULT 1 AFTER `updated_at`;
 ----------------------------------------------------------------------
+
+
+
+----------------------------------------------------------------------------------
+-- 28/01/2026--------------------Samson-------------
+CREATE TABLE processMetricsTarget (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    resumetoInterviewRate VARCHAR(255) NOT NULL,
+    averageMatchScore VARCHAR(255) NOT NULL,
+    interviewSlotUtilization VARCHAR(255) NOT NULL,
+    timetoDecision VARCHAR(255) NOT NULL,
+    candidateConversionRate VARCHAR(255) NOT NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
+COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE `processmetricstarget` 
+ADD COLUMN `status` VARCHAR(10) NOT NULL AFTER `candidateConversionRate`;
+
+
+
+ALTER TABLE `job_descriptions` 
+ADD COLUMN `industryAvg` VARCHAR(45) NULL AFTER `updated_at`;
