@@ -693,7 +693,7 @@ router.post('/:id/hr-decision', authenticate, requireWriteAccess, async (req, re
 
     if (requiresReason && (!reason || !reason.trim())) {
       if (status === 'selected') {
-        return res.status(400).json({
+        return res.status(200).json({
           success: false,
           error: 'reason is required when selecting a candidate that the interviewer did not select (overriding decision)'
         });
@@ -1557,5 +1557,71 @@ from candidate_evaluations ce
     });
   }
 });
+
+
+
+router.get('/hr/all_hr_pending_feedback' , authenticate  , requireWriteAccess , async ( req, res )=> {
+   
+
+  let { pageNumber=1 , pageSize =10}  = req.query
+
+
+  try {
+       let sql = `WITH cte  as (SELECT
+ distinct
+    ce.*,
+      jd.title,
+    iv.interviewers
+FROM job_descriptions jd
+INNER JOIN candidate_evaluations ce
+    ON ce.job_description_id = jd.id
+INNER JOIN interview_details i 
+    ON i.candidate_evaluations_id = ce.id    
+JOIN LATERAL (
+    SELECT
+        JSON_ARRAYAGG(
+            JSON_OBJECT(
+                'interview_id', i.id,
+                'interviewer_name', u.full_name,
+                'interviewer_email', u.email,
+                'interviewer_status', i.interviewer_status,
+                'interviewer_hold_reason', i.interviewer_hold_reason,
+                'interviewer_feedback' , i.interviewer_feedback
+            )
+        ) AS interviewers
+    FROM interview_details i
+    INNER JOIN users u
+        ON u.id = i.interviewer_id
+    WHERE i.candidate_evaluations_id = ce.id
+) iv
+WHERE ce.hr_final_status = 'pending'  and i.interviewer_status != 'pending' )
+
+select  *, (select count(*) from cte) as totalCount  from cte 
+order by cte.updated_at asc
+LIMIT ${pageSize}
+OFFSET ${(pageNumber -1) * pageSize }`
+
+
+let evaluations = await query ( sql  )
+
+res.json ( {
+  success:true,
+  count: evaluations[0]?.totalCount || 0,
+  data: evaluations
+} )
+  } catch (error) {
+      res.json({
+        success:false,
+        error: 'Failed to fetch evaluations',
+        message: error.message
+      })
+  }
+
+
+
+})
+
+
+
 
 module.exports = router;
