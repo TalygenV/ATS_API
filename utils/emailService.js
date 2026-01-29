@@ -95,6 +95,8 @@ async function sendInterviewAssignmentToInterviewer({
   interviewDate,
   interViewLink,
   interViewJoinLink,
+  is_video_call  ,
+  resumeurl
 }) {
   
 
@@ -134,6 +136,10 @@ async function sendInterviewAssignmentToInterviewer({
             <strong>Candidate Email:</strong> ${candidateEmail || 'N/A'}<br>
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
             <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
+            ${is_video_call == 2 ? ` <strong> Interview Type : Face to Face ` : ''}
+            ${is_video_call == 1 ? ` <strong> Interview Type : Video call ` : ''}
+            ${is_video_call == 0 ? ` <strong> Interview Type : On call ` : ''}
+
   </p>
  ${interViewLink ? `
   <p>
@@ -159,10 +165,13 @@ async function sendInterviewAssignmentToInterviewer({
   </p>
   ` : ''}
 
+${is_video_call != 2 ? `
   <p>
     Kindly join the meeting on time and ensure you have a stable internet
     connection. Please review the candidate's resume and job description prior to the interview.
   </p>
+` : ''}
+  <strong>Resume Link:</strong> ${resumeurl}
 
   <p>
     If you are unable to attend at the scheduled time, kindly inform us in advance.
@@ -216,6 +225,7 @@ async function sendInterviewAssignmentToCandidate({
   interviewDate,
   interviewerName,
   interviewLink,
+  is_video_call
 }) {
   // const formattedDate = new Date(interviewDate).toLocaleString('en-US', {
   //   weekday: 'long',
@@ -267,7 +277,7 @@ async function sendInterviewAssignmentToCandidate({
     <strong>Time:</strong> ${formattedTime} (IST)
   </p>
 
-  ${interviewLink ? `
+  ${is_video_call == 1 ? `
   <p>
     <strong> Meeting Link:</strong><br/>
     <a href="${interviewLink || '#'}" target="_blank">
@@ -275,17 +285,34 @@ async function sendInterviewAssignmentToCandidate({
     </a>
   </p> ` : ''}
 
-  ${interviewLink ? `
+  ${is_video_call ==1 ? `
 
    <p>
     <strong>Meeting ID:</strong> ${meetingId || 'N/A'}<br/>
     <strong>Passcode:</strong> ${meetingPassword || 'N/A'}
   </p> ` : ''}
+  ${is_video_call != 2 ? `
 
   <p>
     Kindly join the meeting on time and ensure you have a stable internet
     connection. Please keep your updated resume handy for reference.
-  </p>
+  </p>` : '' }
+
+  ${is_video_call == 2 ? `
+    <p>
+    <strong>Venue:</strong>
+    Cogniter Technologies
+    SCO 353–355, Second Floor
+    Sector 34A, Sector 34
+    Chandigarh – 160022  </p>` : '' }
+
+ ${is_video_call == 2 ? `
+ <p>
+  We look forward to meeting you in person and discussing your profile in detail.  </p>` : '' }
+
+  ${is_video_call == 2 ? `
+    <p>
+     Please confirm your availability for the same. Feel free to reach out if you require any additional information.  </p>` : '' }
 
   <p>
     If you are unable to attend at the scheduled time, kindly inform us in advance.

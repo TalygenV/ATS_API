@@ -16,11 +16,11 @@ const router = express.Router();
 router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
   try {
     const { evaluation_id, interviewer_id, interview_date, slot_id , is_video_call } = req.body;
-
+    
     if (!evaluation_id || !interviewer_id || (!interview_date && !slot_id)) {
       return res.status(400).json({
         success: false,
-        error: 'evaluation_id, interviewer_id and either interview_date or slot_id are required'
+        error: 'evaluation_id, interviewer_id and either interview_date or slot_id are required'  
       });
     }
 
@@ -74,7 +74,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
            // Convert interview date to UTC
     const interviewDateUTC = toUTCString(finalInterviewDate);
 
-    if(is_video_call)
+    if(is_video_call == 1)
     {
         try {
        interviewLink = await generateInterViewLink({
@@ -149,7 +149,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
    
 
 
-    if(is_video_call == true){
+    if(is_video_call == 1){
 // Update candidate_evaluations with interview links (shared link for all interviewers)
     await query(
       `UPDATE candidate_evaluations 
@@ -186,7 +186,8 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     const candidateName = evaluation.candidate_name || evaluation.name || 'Candidate';
     const candidateEmail = evaluation.candidate_email || evaluation.email;
     const jobTitle = evaluation.job_title || 'Position';
-
+      const IdResponce = await query(`select ce.resume_id as resume_id,jd.id as jd_id from candidate_evaluations ce join job_descriptions jd on  ce.job_description_id = jd.id where ce.id =?` , [evaluation_id]);
+const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce.jd_id}/resumes/${IdResponce.resume_id}`
  // Send to interviewer
     if (interviewer.email) {
       await sendInterviewAssignmentToInterviewer({
@@ -201,7 +202,9 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
         interViewLink : interviewLink?.start_url,
-        interViewJoinLink : interviewLink?.join_url  
+        interViewJoinLink : interviewLink?.join_url,
+        is_video_call  : is_video_call,
+        resumeurl:resumeurl
       });
     }
 
@@ -215,7 +218,8 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
         interviewerName: interviewer.full_name || interviewer.email,
-         interviewLink : interviewLink?.join_url
+         interviewLink : interviewLink?.join_url ,
+         is_video_call  : is_video_call
       });
     }
 
@@ -301,6 +305,9 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
             <strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}<br>
             <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
+            ${is_video_call == 2 ? ` <strong> Interview Type : Face to Face ` : ''}
+            ${is_video_call == 1 ? ` <strong> Interview Type : Video call ` : ''}
+            ${is_video_call == 0 ? ` <strong> Interview Type : On call ` : ''}
   </p>
 
   ${is_video_call ? `<p>
@@ -379,6 +386,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
 // Reassign/Update interview details (HR/Admin only)
 router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (req, res) => {
   try {
+    console.log('req',req);
     const { evaluation_id } = req.params;
     const { interviewer_id, interview_date, slot_id , is_video_call } = req.body;
 
@@ -435,7 +443,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
            // Convert interview date to UTC
     const interviewDateUTC = toUTCString(finalInterviewDate);
 
-    if(is_video_call)
+    if(is_video_call == 1)
     {
         try {
        interviewLink = await generateInterViewLink({
@@ -510,7 +518,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
 
 
     // Generate interview link
-    if(is_video_call == true){  
+    if(is_video_call == 1){  
       
     // Update candidate_evaluations with interview links (shared link for all interviewers)
     await query(
@@ -548,7 +556,8 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     const candidateEmail = evaluation.candidate_email || evaluation.email;
     const jobTitle = evaluation.job_title || 'Position';
 
-
+    const IdResponce = await query(`select ce.resume_id as resume_id,jd.id as jd_id from candidate_evaluations ce join job_descriptions jd on  ce.job_description_id = jd.id where ce.id =?` , [evaluation_id]);
+const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce[0].jd_id}/resumes/${IdResponce[0].resume_id}`
     // Send to interviewer
     if (interviewer.email) {
       await sendInterviewAssignmentToInterviewer({
@@ -562,7 +571,9 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
         interViewLink : interviewLink?.start_url,
-         interViewJoinLink : interviewLink?.join_url 
+         interViewJoinLink : interviewLink?.join_url ,
+         is_video_call  : is_video_call,
+         resumeurl:resumeurl
       });
     }
 
@@ -576,7 +587,8 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
         interviewerName: interviewer.full_name || interviewer.email,
-         interviewLink : interviewLink?.join_url
+         interviewLink : interviewLink?.join_url,
+         is_video_call  : is_video_call
       });
     }
 
@@ -660,9 +672,12 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
             <strong>Interviewer:</strong> ${interviewer.full_name || interviewer.email}<br>
             <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
+            ${is_video_call == 2 ? ` <strong> Interview Type : Face to Face ` : ''}
+            ${is_video_call == 1 ? ` <strong> Interview Type : Video call ` : ''}
+            ${is_video_call == 0 ? ` <strong> Interview Type : On call ` : ''}
   </p>
  
-  ${is_video_call ? `<p>
+  ${is_video_call == 1 ? `<p>
     <strong> Start Meeting Link:</strong><br/>
     <a href="${interviewLink?.start_url || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Start  Meeting</button>
@@ -670,7 +685,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
   </p>` : ''}
 
 
-  ${is_video_call ? `
+  ${is_video_call == 1 ? `
     <p>
     <strong> Join Meeting Link:</strong><br/>
     <a href="${interviewLink?.join_url || '#'}" target="_blank">
@@ -678,7 +693,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     </a>
   </p>` : ''}
 
-  ${is_video_call ? `
+  ${is_video_call == 1 ? `
    <p>
     <strong>Meeting ID:</strong> ${interviewLink?.meeting_id || 'N/A'}<br/>
     <strong>Passcode:</strong> ${interviewLink?.password || 'N/A'}
@@ -1428,7 +1443,7 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
            // Convert interview date to UTC
     const interviewDateUTC = toUTCString(finalInterviewDate);
 
-    if(is_video_call)
+    if(is_video_call == 1)
     {
         try {
        interviewLink = await generateInterViewLink({
@@ -1475,7 +1490,7 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
 
 
 
-    if(is_video_call){
+    if(is_video_call == 1){
         // Update candidate_evaluations with interview links
     await query(
       `UPDATE candidate_evaluations 
@@ -1545,7 +1560,8 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
     slots.forEach(slot => {
       slotMap.set(slot.id, slot);
     });
-
+const IdResponce = await query(`select ce.resume_id as resume_id,jd.id as jd_id from candidate_evaluations ce join job_descriptions jd on  ce.job_description_id = jd.id where ce.id =?` , [evaluation_id]);
+const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce.jd_id}/resumes/${IdResponce.resume_id}`
     // Send email to each interviewer (using their corresponding slot)
     for (let i = 0; i < interviewer_ids.length; i++) {
       const interviewerId = interviewer_ids[i];
@@ -1567,7 +1583,9 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
           jobTitle,
           interviewDate: slotDate,
           interViewLink: interviewLink?.start_url,
-           interViewJoinLink : interviewLink?.join_url 
+           interViewJoinLink : interviewLink?.join_url ,
+           is_video_call  : is_video_call,
+           resumeurl:resumeurl
         });
       }
     }
@@ -1583,7 +1601,8 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
         jobTitle,
         interviewDate: fromUTCString(interviewDateUTC),
         interviewerName: interviewerNames,
-        interviewLink: interviewLink?.join_url
+        interviewLink: interviewLink?.join_url,
+        is_video_call  : is_video_call
       });
     }
 
@@ -1622,9 +1641,12 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
             <strong>Job Position:</strong> ${jobTitle || 'N/A'}<br>
             <strong>Interviewers (${interviewer_ids.length}):</strong> ${interviewerList}<br>
             <strong>Interview Date & Time:</strong> ${formattedDate} (IST)<br>
+            ${is_video_call == 2 ? ` <strong> Interview Type : Face to Face ` : ''}
+            ${is_video_call == 1 ? ` <strong> Interview Type : Video call ` : ''}
+            ${is_video_call == 0 ? ` <strong> Interview Type : On call ` : ''}
   </p>
 
-  ${is_video_call ? `<p>
+  ${is_video_call == 1 ? `<p>
     <strong> Start Meeting Link:</strong><br/>
     <a href="${interviewLink?.start_url || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Start  Meeting</button>
@@ -1632,7 +1654,7 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
   </p>` : ''}
 
 
-  ${is_video_call ? `
+  ${is_video_call == 1 ? `
     <p>
     <strong> Join Meeting Link:</strong><br/>
     <a href="${interviewLink?.join_url || '#'}" target="_blank">
@@ -1640,7 +1662,7 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
     </a>
   </p>` : ''}
 
-  ${is_video_call ? `
+  ${is_video_call == 1 ? `
    <p>
     <strong>Meeting ID:</strong> ${interviewLink?.meeting_id || 'N/A'}<br/>
     <strong>Passcode:</strong> ${interviewLink?.password || 'N/A'}
