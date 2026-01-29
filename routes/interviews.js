@@ -187,7 +187,7 @@ router.post('/assign', authenticate, requireWriteAccess, async (req, res) => {
     const candidateEmail = evaluation.candidate_email || evaluation.email;
     const jobTitle = evaluation.job_title || 'Position';
       const IdResponce = await query(`select ce.resume_id as resume_id,jd.id as jd_id from candidate_evaluations ce join job_descriptions jd on  ce.job_description_id = jd.id where ce.id =?` , [evaluation_id]);
-const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce.jd_id}/resumes/${IdResponce.resume_id}`
+const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce[0].jd_id}/resumes/${IdResponce[0].resume_id}`
  // Send to interviewer
     if (interviewer.email) {
       await sendInterviewAssignmentToInterviewer({
@@ -310,7 +310,7 @@ const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce.jd_id}/re
             ${is_video_call == 0 ? ` <strong> Interview Type : On call ` : ''}
   </p>
 
-  ${is_video_call ? `<p>
+  ${is_video_call == 1 ? `<p>
     <strong> Start Meeting Link:</strong><br/>
     <a href="${interviewLink?.start_url || '#'}" target="_blank">
       <button style="background-color: #0066ffff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">Start  Meeting</button>
@@ -318,7 +318,7 @@ const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce.jd_id}/re
   </p>` : ''}
 
 
-  ${is_video_call ? `
+  ${is_video_call == 1 ? `
     <p>
     <strong> Join Meeting Link:</strong><br/>
     <a href="${interviewLink?.join_url || '#'}" target="_blank">
@@ -326,7 +326,7 @@ const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce.jd_id}/re
     </a>
   </p>` : ''}
 
-  ${is_video_call ? `
+  ${is_video_call == 1 ? `
    <p>
     <strong>Meeting ID:</strong> ${interviewLink?.meeting_id || 'N/A'}<br/>
     <strong>Passcode:</strong> ${interviewLink?.password || 'N/A'}
@@ -557,7 +557,7 @@ router.put('/assign/:evaluation_id', authenticate, requireWriteAccess, async (re
     const jobTitle = evaluation.job_title || 'Position';
 
     const IdResponce = await query(`select ce.resume_id as resume_id,jd.id as jd_id from candidate_evaluations ce join job_descriptions jd on  ce.job_description_id = jd.id where ce.id =?` , [evaluation_id]);
-const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce[0].jd_id}/resumes/${IdResponce[0].resume_id}`
+    const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce[0].jd_id}/resumes/${IdResponce[0].resume_id}`
     // Send to interviewer
     if (interviewer.email) {
       await sendInterviewAssignmentToInterviewer({
@@ -573,7 +573,7 @@ const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce[0].jd_id}
         interViewLink : interviewLink?.start_url,
          interViewJoinLink : interviewLink?.join_url ,
          is_video_call  : is_video_call,
-         resumeurl:resumeurl
+         resumeurl: resumeurl
       });
     }
 
@@ -1561,7 +1561,7 @@ router.post('/assign/bulk', authenticate, requireWriteAccess, async (req, res) =
       slotMap.set(slot.id, slot);
     });
 const IdResponce = await query(`select ce.resume_id as resume_id,jd.id as jd_id from candidate_evaluations ce join job_descriptions jd on  ce.job_description_id = jd.id where ce.id =?` , [evaluation_id]);
-const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce.jd_id}/resumes/${IdResponce.resume_id}`
+const resumeurl = `${req.headers.origin}/job-descriptions/${IdResponce[0].jd_id}/resumes/${IdResponce[0].resume_id}`
     // Send email to each interviewer (using their corresponding slot)
     for (let i = 0; i < interviewer_ids.length; i++) {
       const interviewerId = interviewer_ids[i];
