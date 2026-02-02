@@ -356,3 +356,17 @@ ADD COLUMN `status` VARCHAR(10) NOT NULL AFTER `candidateConversionRate`;
 
 ALTER TABLE `job_descriptions` 
 ADD COLUMN `industryAvg` VARCHAR(45) NULL AFTER `updated_at`;
+
+
+----------------------------------------------------------------------------------
+-- 30/01/2026--------------------Samson-------------
+
+CREATE TABLE IF NOT EXISTS walkin_drive (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `drive_name` VARCHAR(255) NULL,
+  `drive_description` TEXT NULL,
+  `from_date` DATETIME NULL,
+  `to_date` DATETIME NULL,
+  `dobDescription_id` BIGINT NULL,
+  `status` VARCHAR(255) NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

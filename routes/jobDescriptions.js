@@ -176,11 +176,6 @@ ORDER BY result.created_at DESC
   }
 });
 
-
-
-
-
-
 // Get job description by ID (all authenticated users can view)
 router.get('/:id', authenticate, async (req, res) => {
   try {

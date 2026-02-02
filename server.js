@@ -15,6 +15,7 @@ const interviewRoutes = require('./routes/interviews');
 const candidateLinkRoutes = require('./routes/candidateLinks');
 const configRoutes = require('./routes/config');
 const analyticsRoutes = require('./routes/analytics');
+const walkIn = require('./routes/walkIn');
 
 // Load environment variables from .env file
 dotenv.config();
@@ -41,6 +42,8 @@ app.use('/api/interviews', interviewRoutes);         // Interview scheduling and
 app.use('/api/candidate-links', candidateLinkRoutes); // Candidate link generation and submission routes
 app.use('/api/config', configRoutes);               // Configuration routes
 app.use('/api/analytics', analyticsRoutes);         // Analytics dashboard routes
+app.use('/api/walkIn', walkIn);  
+
 
 // Health check endpoint
 // Used to verify that the API server is running and accessible

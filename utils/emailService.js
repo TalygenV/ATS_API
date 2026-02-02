@@ -45,9 +45,6 @@ getSmtpTransporter = require("./transpoter");
  */
 async function sendEmail({ to, subject, html, text }) {
 
-
-
-
   try {
     const { transporter, from } = await getSmtpTransporter();
     const mailOptions = {
