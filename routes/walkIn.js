@@ -14,6 +14,7 @@ router.get('/', authenticate, async (req, res) => {
                 wd.drive_description ,
                 wd.drive_description ,
                 wd.to_date ,
+                wd.from_date ,
                 wd.dobDescription_id ,
                 wd.status as WalkinDriveStatus ,
                 jd.title ,
@@ -220,5 +221,64 @@ router.delete('/:id', authenticate, requireWriteAccess, async (req, res) => {
       });
     }
   });
+
+router.get('/single/:id', authenticate, async (req, res) => {
+    try {
+      const sql = `
+            SELECT 
+                wd.id as walkinDriveId ,
+                wd.drive_name,
+                wd.drive_description ,
+                wd.drive_description ,
+                wd.to_date ,
+                wd.from_date ,
+                wd.dobDescription_id ,
+                wd.status as WalkinDriveStatus ,
+                jd.title ,
+                jd.description ,
+                jd.requirements ,
+                jd.status as jdStatus ,
+                jd.industryAvg ,
+                JSON_ARRAYAGG(u.full_name) AS interviewer_names
+            FROM walkin_drive wd
+            JOIN job_descriptions jd 
+                ON jd.id = wd.dobDescription_id
+            JOIN JSON_TABLE(
+                jd.interviewers,
+                '$[*]' COLUMNS (
+                    interviewer_id CHAR(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci PATH '$'
+                )
+            ) jt
+                ON 1=1
+            JOIN users u 
+                ON u.id COLLATE utf8mb4_0900_ai_ci = jt.interviewer_id
+                where wd.dobDescription_id = ?
+            GROUP BY wd.id
+           
+            ;
+            `; 
+      const rows = await query(sql, [req.params.id]);
+  
+      const data = rows.map(jd => ({
+        ...jd,
+        interviewer_names: jd.interviewer_names ? JSON.parse(jd.interviewer_names) : [],
+        resume_count: Number(jd.walkinDriveId) || 0
+      }));
+  
+      res.json({
+        success: true,
+        count: data.length,
+        data
+      });
+  
+    } catch (error) {
+      console.error('Error fetching Walkin Drive:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch Walkin Drive',
+        error: error.message
+      });
+    }
+  });  
 
 module.exports = router;
