@@ -79,7 +79,7 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
   
       const result = await query(
         'INSERT INTO walkin_drive (drive_name, drive_description, from_date, to_date, dobDescription_id,status) VALUES (?, ?, ?, ?, ?,?)',
-        [drive_name.trim(), drive_description.trim(), from_date, to_date, dobDescription_id,status]
+        [drive_name.trim(), drive_description.trim(), fromUTCString(from_date), toUTCString(to_date), dobDescription_id,status]
       );
   
       const Drives = await queryOne(
