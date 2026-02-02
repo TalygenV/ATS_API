@@ -12,7 +12,7 @@ const { matchResumeWithJobDescription } = require('../utils/resumeMatcher');
 const { hasRecentApplication , alreadyAssignInterView } = require('../utils/applicationValidator');
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
-const { convertResultToUTC } = require('../utils/datetimeUtils');
+const { convertResultToUTC , fromUTCString , getCurrentUTCDate} = require('../utils/datetimeUtils');
 
 const router = express.Router();
 
@@ -221,7 +221,7 @@ const handleMulterError = (err, req, res, next) => {
 };
 
 // Helper function to process a single resume file
-const processResumeFile = async (file, jobData) => {
+const processResumeFile = async (file, jobData , source) => {
   const filePath = file.path;
   const fileName = file.originalname;
   const mimetype = file.mimetype;
@@ -356,6 +356,11 @@ const processResumeFile = async (file, jobData) => {
     fullJobDescription,
     parsedData
   );
+
+     var is_video_call = 1;
+   if (source && source === 'walk_in') {
+    is_video_call = 3;
+   }
   
   // Save evaluation
   let evaluationData = null;
@@ -365,8 +370,8 @@ const processResumeFile = async (file, jobData) => {
         resume_id, job_description_id, candidate_name, contact_number, email,
         resume_text, job_description, overall_match, skills_match, skills_details,
         experience_match, experience_details, education_match, education_details,
-        status, rejection_reason
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        status, rejection_reason , is_video_call
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ?)`,
       [
         parsedResume.id,
         parseInt(jobData.id),
@@ -383,7 +388,8 @@ const processResumeFile = async (file, jobData) => {
         matchResults.education_match,
         matchResults.education_details,
         matchResults.status,
-        matchResults.rejection_reason || null
+        matchResults.rejection_reason || null,
+        is_video_call
       ]
     );
 
@@ -417,9 +423,34 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
       return res.status(200).json({ error: 'No file uploaded' });
     }
 
-    const { job_description_id } = req.body;
+    const { job_description_id , source=null , walk_in_id = null} = req.body;
     if (!job_description_id) {
       return res.status(200).json({ error: 'Job description ID is required' });
+    }
+
+
+    if( source && source === 'walk_in' && !walk_in_id ){
+      return res.status(200).json({ success :false, error: 'Walk-in ID is required for walk-in source' });
+    }
+
+    if( source && source === 'walk_in' && walk_in_id ){ 
+      
+
+      let query = `SELECT * FROM walkin_drive WHERE id = ? AND status = 'active' `;
+
+      const walkInDrive = await queryOne(
+        query,
+        [walk_in_id]
+      );
+
+      if (!walkInDrive) {
+        return res.status(200).json({ success :false, error: 'Walk-in drive not found or inactive' });
+      }
+
+      if( fromUTCString(walkInDrive.to_date) < getCurrentUTCDate() ){
+        return res.status(200).json({ success :false, error: 'Walk-in drive is not currently active based on the date range' });
+      }
+
     }
 
     // Fetch job description
@@ -440,7 +471,7 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
       evaluationData,
       matchResults,
       talygenUpload
-    } = await processResumeFile(req.file, jobData);
+    } = await processResumeFile(req.file, jobData , source);
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
 
@@ -513,7 +544,7 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
       });
     }
 
-    const { job_description_id } = req.body;
+    const { job_description_id , source=null , walk_in_id = null} = req.body;
     if (!job_description_id) {
       return res.status(400).json({ error: 'Job description ID is required' });
     }
@@ -549,7 +580,7 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
           evaluationData,
           matchResults,
           talygenUpload
-        } = await processResumeFile(file, jobData);
+        } = await processResumeFile(file, jobData , source);
 
         const fileProcessingTime = ((Date.now() - fileStartTime) / 1000).toFixed(2);
         results.push({

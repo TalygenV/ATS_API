@@ -1,7 +1,7 @@
 const express = require('express');
 const { query, queryOne } = require('../config/database');
 const { authenticate, requireWriteAccess } = require('../middleware/auth');
-const { convertResultToUTC } = require('../utils/datetimeUtils');
+const { convertResultToUTC, fromUTCString } = require('../utils/datetimeUtils');
 
 const router = express.Router();
 
@@ -118,12 +118,12 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
   
       if (from_date !== undefined) {
         updateFields.push('from_date = ?');
-        updateValues.push(from_date);
+        updateValues.push(fromUTCString(from_date));
       }
   
       if (to_date !== undefined) {
         updateFields.push('to_date = ?');
-        updateValues.push(to_date);
+        updateValues.push(fromUTCString(to_date));
       }
   
       if (dobDescription_id !== undefined) {
@@ -134,7 +134,7 @@ router.post('/', authenticate, requireWriteAccess, async (req, res) => {
         updateFields.push('status = ?');
         updateValues.push(status);
       }
-  
+    
       updateValues.push(id);
   
       const result = await query(
@@ -280,5 +280,10 @@ router.get('/single/:id', authenticate, async (req, res) => {
       });
     }
   });  
+
+
+
+
+
 
 module.exports = router;

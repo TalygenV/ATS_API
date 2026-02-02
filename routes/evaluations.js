@@ -1623,5 +1623,332 @@ res.json ( {
 
 
 
+// Get evaluations for walkin  by job description ID (all authenticated users can view, with visibility rules)
+router.get('/walkIn/:job_description_id', authenticate, async (req, res) => {
+  try {
+    const { job_description_id } = req.params;
+    const { interviewer_status, status, sort_by } = req.query;
+
+//     let sql = `
+//       SELECT 
+//         ce.*,
+//         (
+//   SELECT COUNT(*)
+//   FROM resumes r3
+//   WHERE r3.parent_id = r.parent_id
+//      OR r3.id = r.parent_id
+//      OR r3.id = r.id
+// ) AS total_versions
+//         JSON_OBJECT(
+//           'id', r.id,
+//           'name', r.name,
+//           'email', r.email,
+//           'phone', r.phone,
+//           'file_name', r.file_name,
+//           'location', r.location,
+//           'total_experience', r.total_experience,
+//           'parent_id', r.parent_id,
+//           'version_number', r.version_number,
+//           'created_at', r.created_at
+//         ) as resume,
+//         JSON_OBJECT(
+//           'id', u.id,
+//           'email', u.email,
+//           'full_name', u.full_name
+//         ) as interviewer
+//       FROM candidate_evaluations ce
+//       LEFT JOIN resumes r ON ce.resume_id = r.id
+//       LEFT JOIN users u ON ce.interviewer_id = u.id
+//       WHERE ce.job_description_id = ?
+//     `;
+  let sql = `
+  SELECT distinct
+    ce.*,
+  (
+  SELECT COUNT(*)
+  FROM resumes r3
+  WHERE
+    (
+      r.parent_id IS NULL
+      AND (r3.id = r.id OR r3.parent_id = r.id)
+    )
+    OR
+    (
+      r.parent_id IS NOT NULL
+      AND (r3.id = r.parent_id OR r3.parent_id = r.parent_id)
+    )
+) AS total_versions,
+    JSON_OBJECT(
+      'id', r.id,
+      'name', r.name,
+      'email', r.email,
+      'phone', r.phone,
+      'file_name', r.file_name,
+      'location', r.location,
+      'total_experience', r.total_experience,
+      'parent_id', r.parent_id,
+      'version_number', r.version_number,
+      'created_at', r.created_at
+    ) AS resume
+
+  FROM candidate_evaluations ce
+LEFT JOIN resumes r ON ce.resume_id = r.id
+Left JOIN interview_details id ON id.candidate_evaluations_id = ce.id
+  WHERE ce.job_description_id = ? AND ce.is_video_call = 3
+`;
+
+const params = [job_description_id];
+
+    // Visibility rules: Interviewers can only see their assigned candidates
+if (req.user.role === 'Interviewer') {
+  sql += `
+    AND EXISTS (
+      SELECT 1
+      FROM interview_details id
+      WHERE id.candidate_evaluations_id = ce.id
+        AND id.interviewer_id COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
+    )
+  `;
+  params.push(req.user.id);
+}
+
+
+
+    
+    // Status filtering - check all status fields
+    if (interviewer_status) {
+      if (interviewer_status === 'selected') {
+        sql += ' AND (id.interviewer_status = ? OR ce.hr_final_status = ?)';
+        params.push('selected', 'selected');
+      } else if (interviewer_status === 'rejected') {
+        sql += ' AND (id.interviewer_status = ? OR ce.hr_final_status = ?)';
+        params.push('rejected', 'rejected');
+      } else if (interviewer_status === 'on_hold') {
+        sql += ' AND (id.interviewer_status = ? OR ce.hr_final_status = ?)';
+        params.push('on_hold', 'on_hold');
+      } else {
+        sql += ' AND (ce.status = ? OR id.interviewer_status = ? OR ce.hr_final_status = ?)';
+        params.push(interviewer_status, interviewer_status, interviewer_status);
+      }
+    }
+
+        if (status) {
+   
+        sql += ' AND (ce.status = ?)';
+        params.push(status );
+      
+    }
+
+    // Sort by overall_match by default, or by created_at
+    if (sort_by === 'date') {
+      sql += ' ORDER BY ce.created_at DESC';
+    } else {
+      sql += ' ORDER BY ce.overall_match DESC';
+    }
+
+    const evaluations = await query(sql, params);
+
+    // Parse JSON fields safely
+    const parsedEvaluations = evaluations.map(eval => {
+      const parsed = {
+        ...eval,
+        resume: safeParseJSON(eval.resume, null),
+        interviewer: safeParseJSON(eval.interviewer, null),
+        interviewer_feedback: safeParseJSON(eval.interviewer_feedback, null)
+      };
+      // Parse nested JSON in resume if it exists
+      if (parsed.resume) {
+        parsed.resume.skills = safeParseJSON(parsed.resume.skills, []);
+        parsed.resume.experience = safeParseJSON(parsed.resume.experience, []);
+        parsed.resume.education = safeParseJSON(parsed.resume.education, []);
+      }
+      return convertResultToUTC(parsed);
+    });
+    const isInterviewer = req.user.role === 'Interviewer';
+const interviewerId = req.user.id;
+
+    // Process evaluations with version information
+    // Group by email/name to find all versions and select the latest one
+    const versionGroups = new Map();
+    
+    // First pass: group evaluations by email/name to find all versions
+    for (const eval of parsedEvaluations) {
+      const email = eval.email?.toLowerCase().trim() || eval.resume?.email?.toLowerCase().trim();
+      //const name = eval.candidate_name?.toLowerCase().trim() || eval.resume?.name?.toLowerCase().trim();
+      
+      let groupKey = null;
+      if (email) {
+        groupKey = `email:${email}`;
+      }
+
+      if (groupKey) {
+        if (!versionGroups.has(groupKey)) {
+          versionGroups.set(groupKey, []);
+        }
+        versionGroups.get(groupKey).push(eval);
+      }
+    }
+
+    // Second pass: for each group, find the latest version and only include that one
+    const processedEvaluations = [];
+    const processedKeys = new Set();
+    
+    for (const eval of parsedEvaluations) {
+      const email = eval.email?.toLowerCase().trim() || eval.resume?.email?.toLowerCase().trim();
+      //const name = eval.candidate_name?.toLowerCase().trim() || eval.resume?.name?.toLowerCase().trim();
+      
+      let groupKey = null;
+      if (email) {
+        groupKey = `email:${email}`;
+      }
+
+      if (groupKey && !processedKeys.has(groupKey)) {
+        const group = versionGroups.get(groupKey);
+        
+        if (group && group.length > 1) {
+          // Multiple versions exist - find the latest one
+          // Sort by resume version_number DESC, then by resume created_at DESC
+          const sortedGroup = [...group].sort((a, b) => {
+            const versionA = a.resume?.version_number || 1;
+            const versionB = b.resume?.version_number || 1;
+            if (versionB !== versionA) {
+             return versionB - versionA; // Higher version first
+              // return versionA - versionB; // Higher version first
+            }
+            // If versions are equal, sort by resume created_at DESC (using UTC)
+            const resumeDateA = fromUTCString(a.resume?.created_at || a.created_at) || new Date(0);
+            const resumeDateB = fromUTCString(b.resume?.created_at || b.created_at) || new Date(0);
+            return resumeDateB - resumeDateA;
+            // return resumeDateA - resumeDateB;
+          });
+          
+          const latestEval = sortedGroup[0];
+          const versionNumber = latestEval.resume?.version_number || 1;
+          const parentId = latestEval.resume?.parent_id;
+          const isVersion = !!parentId;
+          const totalVersions = group.length;
+
+          processedEvaluations.push({
+            ...latestEval,
+            isDuplicate: true,
+            isVersion: isVersion,
+            versionNumber: versionNumber,
+            parentId: parentId,
+             totalVersions: latestEval.total_versions,
+            duplicateCount: latestEval.total_versions - 1
+            // totalVersions: totalVersions,
+            // duplicateCount: totalVersions - 1
+          });
+        }
+         else if (group && group.length === 1) {
+          // Only one version
+          const eval = group[0];
+          processedEvaluations.push({
+            ...eval,
+            isDuplicate: false,
+            isVersion: false,
+            versionNumber: eval.resume?.version_number || 1,
+            parentId: eval.resume?.parent_id || null,
+            totalVersions: 1,
+            duplicateCount: 0
+          });
+        }
+        
+        processedKeys.add(groupKey);
+      } else if (!groupKey && !processedKeys.has(`unique_${eval.id}`)) {
+        // No email or name, treat as unique
+        processedEvaluations.push({
+          ...eval,
+          isDuplicate: false,
+          isVersion: false,
+          versionNumber: eval.resume?.version_number || 1,
+          parentId: eval.resume?.parent_id || null,
+          totalVersions: 1,
+          duplicateCount: 0
+        });
+        processedKeys.add(`unique_${eval.id}`);
+      }
+    }
+
+    // Fetch interview_details for all evaluations
+    const evaluationIds = processedEvaluations.map(e => e.id);
+    let interviewDetailsMap = new Map();
+    
+    if (evaluationIds.length > 0) {
+      const placeholders = evaluationIds.map(() => '?').join(',');
+      const interviewDetails = await query(
+        `SELECT 
+          id.id,
+          id.candidate_evaluations_id,
+          id.interviewer_id,
+          id.interviewer_time_slots_id,
+          id.interviewer_status,
+          id.interviewer_feedback,
+          id.interviewer_hold_reason,
+          its.start_time as interview_date,
+          its.end_time as interview_end_time,
+          JSON_OBJECT(
+            'id', u.id,
+            'email', u.email,
+            'full_name', u.full_name
+          ) as interviewer
+        FROM interview_details id
+        INNER JOIN interviewer_time_slots its ON id.interviewer_time_slots_id = its.id
+        LEFT JOIN users u ON id.interviewer_id COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci
+        WHERE id.candidate_evaluations_id IN (${placeholders})
+        ORDER BY its.start_time ASC`,
+        evaluationIds
+      );
+
+      // Group interview details by evaluation_id
+      interviewDetails.forEach(detail => {
+        const evalId = detail.candidate_evaluations_id;
+        if (!interviewDetailsMap.has(evalId)) {
+          interviewDetailsMap.set(evalId, []);
+        }
+        const parsed = {
+          id: detail.id,
+          interviewer_id: detail.interviewer_id,
+          interviewer_time_slots_id: detail.interviewer_time_slots_id,
+          interviewer_status: detail.interviewer_status,
+          interviewer_feedback: detail.interviewer_feedback ? JSON.parse(detail.interviewer_feedback) : null,
+          interviewer_hold_reason: detail.interviewer_hold_reason,
+          interview_date: detail.interview_date,
+          interview_end_time: detail.interview_end_time,
+          interviewer: detail.interviewer ? JSON.parse(detail.interviewer) : null
+        };
+        interviewDetailsMap.get(evalId).push(convertResultToUTC(parsed));
+      });
+    }
+
+    // Attach interview_details to each evaluation
+    const finalEvaluations = processedEvaluations.map(eval => ({
+      ...eval,
+      interview_details: interviewDetailsMap.get(eval.id) || [],
+      // Keep backward compatibility: set interviewer and interview_date from first interview_detail if exists
+      interviewer: interviewDetailsMap.get(eval.id)?.[0]?.interviewer || null,
+      interview_date: interviewDetailsMap.get(eval.id)?.[0]?.interview_date || null,
+      interviewer_id: interviewDetailsMap.get(eval.id)?.[0]?.interviewer_id || null,
+      interviewer_status: interviewDetailsMap.get(eval.id)?.[0]?.interviewer_status || null,
+      interviewer_feedback: interviewDetailsMap.get(eval.id)?.[0]?.interviewer_feedback || null,
+      interviewer_hold_reason: interviewDetailsMap.get(eval.id)?.[0]?.interviewer_hold_reason || null
+    }));
+
+    res.json({
+      success: true,
+      count: finalEvaluations.length,
+      data: finalEvaluations
+    });
+  } catch (error) {
+    console.error('Error fetching evaluations by job description:', error);
+    res.status(500).json({
+      error: 'Failed to fetch evaluations',
+      message: error.message
+    });
+  }
+});
+
+
+
 
 module.exports = router;
