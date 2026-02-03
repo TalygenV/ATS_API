@@ -468,15 +468,34 @@ router.get('/dashboard', async (req, res) => {
         GROUP BY id.interviewer_id, u.full_name
         ORDER BY interviews_taken DESC
       `, dateParams),
-      query(`
-        SELECT 
-          COALESCE(id.interviewer_status, 'pending') AS interviewer_status,
-          COUNT(*) AS count
-        FROM interview_details id
-        ${needsInterviewDetailsJoin ? 'INNER JOIN interviewer_time_slots its ON id.interviewer_time_slots_id = its.id' : ''}
-        ${interviewDetailsDateFilter}
-        GROUP BY id.interviewer_status
-      `, dateParams),
+      queryOne(`
+        SELECT
+          SUM(CASE WHEN s.interviewer_status = 'pending'  THEN s.count ELSE 0 END) AS pending,
+          SUM(CASE WHEN s.interviewer_status = 'selected' THEN s.count ELSE 0 END) AS selected,
+          SUM(CASE WHEN s.interviewer_status = 'rejected' THEN s.count ELSE 0 END) AS rejected,
+          SUM(CASE WHEN s.interviewer_status = 'on_hold'  THEN s.count ELSE 0 END) AS on_hold,
+          MAX(stats.total_parsed_resumes)     AS total_parsed_resumes,
+          MAX(stats.interviews_assigned)      AS interviews_assigned,
+          MAX(stats.interviews_not_assigned)  AS interviews_not_assigned
+        FROM (
+          SELECT 
+            COALESCE(id.interviewer_status, 'pending') AS interviewer_status,
+            COUNT(*) AS count
+          FROM interview_details id
+          ${needsInterviewDetailsJoin ? 'INNER JOIN interviewer_time_slots its ON id.interviewer_time_slots_id = its.id' : ''}
+          ${interviewDetailsDateFilter}
+          GROUP BY COALESCE(id.interviewer_status, 'pending')
+        ) s
+        CROSS JOIN (
+          SELECT
+            COUNT(DISTINCT ce.id) AS total_parsed_resumes,
+            COUNT(DISTINCT id.candidate_evaluations_id) AS interviews_assigned,
+            COUNT(DISTINCT ce.id) - COUNT(DISTINCT id.candidate_evaluations_id) AS interviews_not_assigned
+          FROM candidate_evaluations ce
+          LEFT JOIN interview_details id ON id.candidate_evaluations_id = ce.id
+          ${dateFilterCE || ''}
+        ) stats
+      `, [...dateParams, ...dateParams]),
       query(`
         SELECT 
           u.full_name as interviewer_id,
@@ -561,16 +580,25 @@ router.get('/dashboard', async (req, res) => {
       rejectionReasons[item.hr_final_reason] = parseInt(item.count) || 0;
     });
 
-    // Process interviewer status
+    // Process interviewer status (single row from combined query)
     const interviewerStatus = {
       pending: 0,
       selected: 0,
       rejected: 0,
-      on_hold: 0
+      on_hold: 0,
+      total_parsed_resumes: 0,
+      //interviews_assigned: 0,
+      interviews_not_assigned: 0
     };
-    interviewerStatusResult.forEach(item => {
-      interviewerStatus[item.interviewer_status] = parseInt(item.count) || 0;
-    });
+    if (interviewerStatusResult) {
+      interviewerStatus.pending = parseInt(interviewerStatusResult.pending) || 0;
+      interviewerStatus.selected = parseInt(interviewerStatusResult.selected) || 0;
+      interviewerStatus.rejected = parseInt(interviewerStatusResult.rejected) || 0;
+      interviewerStatus.on_hold = parseInt(interviewerStatusResult.on_hold) || 0;
+      interviewerStatus.total_parsed_resumes = parseInt(interviewerStatusResult.total_parsed_resumes) || 0;
+     // interviewerStatus.interviews_assigned = parseInt(interviewerStatusResult.interviews_assigned) || 0;
+      interviewerStatus.interviews_not_assigned = (parseInt(interviewerStatusResult.total_parsed_resumes) - (parseInt(interviewerStatusResult.pending)+parseInt(interviewerStatusResult.selected)+parseInt(interviewerStatusResult.rejected)+parseInt(interviewerStatusResult.on_hold))) || 0;
+    }
 
     res.json({
       success: true,
