@@ -370,3 +370,9 @@ CREATE TABLE IF NOT EXISTS walkin_drive (
   `dobDescription_id` BIGINT NULL,
   `status` VARCHAR(255) NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-------------- Jaid nasim  03/02/2026 -----------------
+
+ALTER TABLE `candidate_evaluations` 
+ADD COLUMN `walkin_drive_id` BIGINT NULL DEFAULT NULL AFTER `is_video_call`;

@@ -828,6 +828,9 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
   let sql = `
   SELECT distinct
     ce.*,
+    wd.drive_name as walkin_drive_name,
+    wd.from_date as walkin_from_date,
+    wd.to_date as walkin_to_date,
   (
   SELECT COUNT(*)
   FROM resumes r3
@@ -858,6 +861,7 @@ router.get('/job/:job_description_id', authenticate, async (req, res) => {
   FROM candidate_evaluations ce
 LEFT JOIN resumes r ON ce.resume_id = r.id
 Left JOIN interview_details id ON id.candidate_evaluations_id = ce.id
+Left JOIN walkin_drive wd ON ce.walkin_drive_id = wd.id
   WHERE ce.job_description_id = ?
 `;
 
@@ -1624,9 +1628,9 @@ res.json ( {
 
 
 // Get evaluations for walkin  by job description ID (all authenticated users can view, with visibility rules)
-router.get('/walkIn/:job_description_id', authenticate, async (req, res) => {
+router.get('/walkIn/:job_description_id/:walkin_drive_id', authenticate, async (req, res) => {
   try {
-    const { job_description_id } = req.params;
+    const { job_description_id, walkin_drive_id } = req.params;
     const { interviewer_status, status, sort_by } = req.query;
 
 //     let sql = `
@@ -1694,10 +1698,10 @@ router.get('/walkIn/:job_description_id', authenticate, async (req, res) => {
   FROM candidate_evaluations ce
 LEFT JOIN resumes r ON ce.resume_id = r.id
 Left JOIN interview_details id ON id.candidate_evaluations_id = ce.id
-  WHERE ce.job_description_id = ? AND ce.is_video_call = 3
+  WHERE ce.job_description_id = ? AND ce.walkin_drive_id = ? AND ce.is_video_call = 3
 `;
 
-const params = [job_description_id];
+const params = [job_description_id, walkin_drive_id];
 
     // Visibility rules: Interviewers can only see their assigned candidates
 if (req.user.role === 'Interviewer') {

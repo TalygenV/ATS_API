@@ -227,7 +227,7 @@ router.delete('/:id', authenticate, requireWriteAccess, async (req, res) => {
     }
   });
 
-router.get('/single/:id', authenticate, async (req, res) => {
+router.get('/single/:id/:walkin_drive_id', authenticate, async (req, res) => {
     try {
       const sql = `
             SELECT 
@@ -257,12 +257,12 @@ router.get('/single/:id', authenticate, async (req, res) => {
                 ON 1=1
             JOIN users u 
                 ON u.id COLLATE utf8mb4_0900_ai_ci = jt.interviewer_id
-                where wd.dobDescription_id = ?
+                where wd.dobDescription_id = ? AND wd.id = ?
             GROUP BY wd.id
            
             ;
             `; 
-      const rows = await query(sql, [req.params.id]);
+      const rows = await query(sql, [req.params.id, req.params.walkin_drive_id]);
   
       const data = rows.map(jd => ({
         ...jd,

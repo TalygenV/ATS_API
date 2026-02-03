@@ -127,7 +127,9 @@ function convertResultToUTC(result) {
     'start_time',
     'end_time',
     'interview_date',
-    'timestamp'
+    'timestamp',
+    "walkin_from_date",
+    "walkin_to_date"
   ];
 
   if (Array.isArray(result)) {

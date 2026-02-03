@@ -221,7 +221,7 @@ const handleMulterError = (err, req, res, next) => {
 };
 
 // Helper function to process a single resume file
-const processResumeFile = async (file, jobData , source) => {
+const processResumeFile = async (file, jobData , source, walkin_drive_id) => {
   const filePath = file.path;
   const fileName = file.originalname;
   const mimetype = file.mimetype;
@@ -370,8 +370,8 @@ const processResumeFile = async (file, jobData , source) => {
         resume_id, job_description_id, candidate_name, contact_number, email,
         resume_text, job_description, overall_match, skills_match, skills_details,
         experience_match, experience_details, education_match, education_details,
-        status, rejection_reason , is_video_call
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ?)`,
+        status, rejection_reason , is_video_call , walkin_drive_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ? , ?)`,
       [
         parsedResume.id,
         parseInt(jobData.id),
@@ -389,7 +389,8 @@ const processResumeFile = async (file, jobData , source) => {
         matchResults.education_details,
         matchResults.status,
         matchResults.rejection_reason || null,
-        is_video_call
+        is_video_call,
+        walkin_drive_id || null
       ]
     );
 
@@ -471,7 +472,7 @@ router.post('/single', authenticate, requireWriteAccess, upload.single('resume')
       evaluationData,
       matchResults,
       talygenUpload
-    } = await processResumeFile(req.file, jobData , source);
+    } = await processResumeFile(req.file, jobData , source , walk_in_id);
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
 
@@ -580,7 +581,7 @@ router.post('/bulk', authenticate, requireWriteAccess, upload.array('resumes', 5
           evaluationData,
           matchResults,
           talygenUpload
-        } = await processResumeFile(file, jobData , source);
+        } = await processResumeFile(file, jobData , source , walk_in_id);
 
         const fileProcessingTime = ((Date.now() - fileStartTime) / 1000).toFixed(2);
         results.push({
