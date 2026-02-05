@@ -449,7 +449,7 @@ FROM (
         END AS rejection_type
 
     FROM candidate_evaluations ce
-
+ ${dateFilterCE || ''} 
 ) rejectionlist ;
 
 
