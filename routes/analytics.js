@@ -310,6 +310,7 @@ router.get('/process-metrics', async (req, res) => {
       SELECT
         COUNT(DISTINCT ce.id) AS total_parsed_resumes,
         COUNT(DISTINCT id.candidate_evaluations_id) AS interviews_assigned,
+        COUNT(DISTINCT CASE  WHEN ce.hr_final_status = 'selected' THEN ce.id END) AS total_hired,
         COUNT(DISTINCT ce.id) - COUNT(DISTINCT id.candidate_evaluations_id) AS interviews_not_assigned
       FROM candidate_evaluations ce
       LEFT JOIN interview_details id ON id.candidate_evaluations_id = ce.id
