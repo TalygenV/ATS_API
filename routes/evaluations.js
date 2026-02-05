@@ -657,7 +657,7 @@ router.post('/:id/hr-decision', authenticate, requireWriteAccess, async (req, re
     // Validate status
     const validStatuses = ['selected', 'rejected', 'on_hold'];
     if (!status || !validStatuses.includes(status)) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'Valid status is required (selected, rejected, or on_hold)'
       });
@@ -670,7 +670,7 @@ router.post('/:id/hr-decision', authenticate, requireWriteAccess, async (req, re
     );
 
     if (!evaluation) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
         error: 'Evaluation not found'
       });
@@ -698,7 +698,7 @@ router.post('/:id/hr-decision', authenticate, requireWriteAccess, async (req, re
           error: 'reason is required when selecting a candidate that the interviewer did not select (overriding decision)'
         });
       } else {
-        return res.status(400).json({
+        return res.status(200).json({
           success: false,
           error: 'reason is required when status is rejected or on_hold'
         });
@@ -730,7 +730,7 @@ router.post('/:id/hr-decision', authenticate, requireWriteAccess, async (req, re
 
     if (status === 'on_hold') {
       sqlForHistory += ', hr_final_reason = ?';
-      paramsForHistory.push(hold_reason.trim());
+      paramsForHistory.push(reason.trim());
     } else {
         sqlForHistory += ', hr_final_reason = NULL';
     }

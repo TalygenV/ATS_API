@@ -490,7 +490,8 @@ router.get('/dashboard', async (req, res) => {
           SELECT
             COUNT(DISTINCT ce.id) AS total_parsed_resumes,
             COUNT(DISTINCT id.candidate_evaluations_id) AS interviews_assigned,
-            COUNT(DISTINCT ce.id) - COUNT(DISTINCT id.candidate_evaluations_id) AS interviews_not_assigned
+            COUNT(DISTINCT ce.id) - COUNT(DISTINCT id.candidate_evaluations_id) AS interviews_not_assigned,
+            COUNT(DISTINCT CASE  WHEN ce.hr_final_status = 'selected' THEN ce.id END) AS total_hired
           FROM candidate_evaluations ce
           LEFT JOIN interview_details id ON id.candidate_evaluations_id = ce.id
           ${dateFilterCE || ''}
@@ -522,6 +523,7 @@ router.get('/dashboard', async (req, res) => {
         SELECT
           COUNT(DISTINCT ce.id) AS total_parsed_resumes,
           COUNT(DISTINCT id.candidate_evaluations_id) AS interviews_assigned,
+          COUNT(DISTINCT CASE  WHEN ce.hr_final_status = 'selected' THEN ce.id END) AS total_hired,
           COUNT(DISTINCT ce.id) - COUNT(DISTINCT id.candidate_evaluations_id) AS interviews_not_assigned
         FROM candidate_evaluations ce
         LEFT JOIN interview_details id ON id.candidate_evaluations_id = ce.id
@@ -633,7 +635,8 @@ router.get('/dashboard', async (req, res) => {
         processMetrics: {
           total_parsed_resumes: parseInt(processMetricsResult.total_parsed_resumes) || 0,
           interviews_assigned: parseInt(processMetricsResult.interviews_assigned) || 0,
-          interviews_not_assigned: parseInt(processMetricsResult.interviews_not_assigned) || 0
+          interviews_not_assigned: parseInt(processMetricsResult.interviews_not_assigned) || 0,
+          total_hired : parseInt(processMetricsResult.total_hired) || 0
         },
         growthStats: growthStats || {},
         recruitmentProcessMetricsKpi : recruitmentProcessMetricsKpi || {},
