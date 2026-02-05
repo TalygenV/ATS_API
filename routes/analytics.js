@@ -404,6 +404,7 @@ router.get('/dashboard', async (req, res) => {
     
     // Fetch all analytics data in parallel
     const [
+      rejectionMoreDetailsResult,
       positionsResult,
       hiringFunnelResult,
       timeToHireResult,
@@ -413,10 +414,49 @@ router.get('/dashboard', async (req, res) => {
       slotUtilizationResult,
       resumeVolumeResult,
       processMetricsResult,
+      rejectedMetricsResult,
       growthStats,
       recruitmentProcessMetricsKpi,
       jobDescIndustryAvg
     ] = await Promise.all([
+      
+      queryOne(`
+SELECT
+    SUM(CASE WHEN rejection_type = 'Rejected by Resume Parsing' THEN 1 ELSE 0 END) AS rejected_by_resume_parsing,
+    SUM(CASE WHEN rejection_type = 'Technical Rejected' THEN 1 ELSE 0 END) AS technical_rejected,
+    SUM(CASE WHEN rejection_type = 'Rejected by Interviewer' THEN 1 ELSE 0 END) AS rejected_by_interviewer,
+    SUM(CASE WHEN rejection_type = 'Position on Hold' THEN 1 ELSE 0 END) AS position_on_hold,
+    SUM(CASE WHEN rejection_type = 'Rejected by HR' THEN 1 ELSE 0 END) AS rejected_by_hr
+FROM (
+    SELECT
+        CASE 
+            WHEN ce.status = 'rejected' 
+                THEN 'Rejected by Resume Parsing'
+
+            WHEN LOWER(ce.hr_final_reason) LIKE '%technical%' 
+                THEN 'Technical Rejected'
+
+            WHEN LOWER(ce.hr_final_reason) LIKE '%interviewer%' 
+                THEN 'Rejected by Interviewer'
+
+            WHEN LOWER(ce.hr_final_reason) LIKE '%hold%' 
+                 OR ce.hr_final_status = 'on_hold'
+                THEN 'Position on Hold'
+
+            WHEN ce.hr_final_status = 'rejected' 
+                THEN 'Rejected by HR'
+
+        END AS rejection_type
+
+    FROM candidate_evaluations ce
+
+) rejectionlist ;
+
+
+  
+`, dateParams),
+
+
       query(`
         SELECT 
           jd.title,
@@ -530,6 +570,15 @@ router.get('/dashboard', async (req, res) => {
         LEFT JOIN interview_details id ON id.candidate_evaluations_id = ce.id
         ${dateFilterCE || ''}
       `, dateParams),
+      queryOne(`
+        SELECT
+           COUNT(DISTINCT CASE  WHEN ce.status = 'rejected' THEN ce.id END) AS total_parse_rejected,
+          COUNT(DISTINCT CASE  WHEN ce.hr_final_status = 'rejected' THEN ce.id END) AS total_hr_rejected,
+          COUNT(DISTINCT CASE  WHEN id.interviewer_status = 'rejected' THEN ce.id END)  AS total_interviewer_rejected
+        FROM candidate_evaluations ce
+        LEFT JOIN interview_details id ON id.candidate_evaluations_id = ce.id
+        ${dateFilterCE || ''}
+      `, dateParams),
       hasDateRange ? queryOne(`
         WITH current AS (
           SELECT
@@ -638,6 +687,14 @@ router.get('/dashboard', async (req, res) => {
           interviews_assigned: parseInt(processMetricsResult.interviews_assigned) || 0,
           interviews_not_assigned: parseInt(processMetricsResult.interviews_not_assigned) || 0,
           total_hired : parseInt(processMetricsResult.total_hired) || 0
+        },
+        rejectedMetricsResult ,
+        rejectionMoreDetailsResult : {
+          rejected_by_resume_parsing: parseInt(rejectionMoreDetailsResult.rejected_by_resume_parsing) || 0,
+          technical_rejected: parseInt(rejectionMoreDetailsResult.technical_rejected) || 0,
+          rejected_by_interviewer: parseInt(rejectionMoreDetailsResult.rejected_by_interviewer) || 0,
+          position_on_hold: parseInt(rejectionMoreDetailsResult.position_on_hold) || 0,
+          rejected_by_hr: parseInt(rejectionMoreDetailsResult.rejected_by_hr) || 0
         },
         growthStats: growthStats || {},
         recruitmentProcessMetricsKpi : recruitmentProcessMetricsKpi || {},
