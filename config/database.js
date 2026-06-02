@@ -11,9 +11,9 @@ const MYSQL_TYPE_BLOB = 252;  // BLOB type (JSON_OBJECT can return this)
 // Database connection configuration
 // Uses environment variables with fallback defaults
 const dbConfig = {
-  host: process.env.DB_HOST || '174.127.114.194',
-  user: process.env.DB_USER || 'seth',
-  password: process.env.DB_PASSWORD || '@Password1#',
+  host: process.env.DB_HOST || '172.241.229.177',
+  user: process.env.DB_USER || 'devadmin',
+  password: process.env.DB_PASSWORD || 'PA,MPVA,1FhjTEimlZH8WB7e',
   database: process.env.DB_NAME || 'ats_system_stage',
   waitForConnections: true,
   connectionLimit: 10,

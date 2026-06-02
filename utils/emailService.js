@@ -49,7 +49,7 @@ async function sendEmail({ to, subject, html, text }) {
     const { transporter, from } = await getSmtpTransporter();
     const mailOptions = {
       from,
-      to :"ssrivastav@zorbis.com",
+      to, //:"ssrivastav@zorbis.com",
       subject,
       html,
       text: text || html.replace(/<[^>]*>/g, '') // Strip HTML tags for plain text
