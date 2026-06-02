@@ -18,7 +18,7 @@ router.post('/register', authenticate, requireAdmin, async (req, res) => {
 
     // Validate input
     if (!email || !password || !role) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'Email, password, and role are required'
       });
@@ -26,7 +26,7 @@ router.post('/register', authenticate, requireAdmin, async (req, res) => {
 
     // Validate role
     if (!['HR', 'Interviewer', 'Admin'].includes(role)) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'Invalid role. Must be HR, Interviewer, or Admin'
       });
@@ -35,7 +35,7 @@ router.post('/register', authenticate, requireAdmin, async (req, res) => {
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'Invalid email format'
       });
@@ -48,7 +48,7 @@ router.post('/register', authenticate, requireAdmin, async (req, res) => {
     );
 
     if (existingUser) {
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         error: 'User with this email already exists'
       });
