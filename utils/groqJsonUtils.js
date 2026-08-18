@@ -1,6 +1,7 @@
 // Shared Groq JSON extraction, error handling, and repair utilities
 
-const PRIMARY_MODEL = 'llama-3.1-8b-instant';
+// const PRIMARY_MODEL = 'llama-3.1-8b-instant';
+const PRIMARY_MODEL = 'openai/gpt-oss-120b';
 const REPAIR_MODEL = 'llama-3.3-70b-versatile';
 
 function unwrapGroqApiError(obj) {
